@@ -1,0 +1,291 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Eway Device Setup",
+        "description": "Choose the type of device you want to configure",
+        "data": {
+          "device_type": "Device Type"
+        },
+        "data_description": {
+          "device_type": {
+            "charger": "🔌 Charger",
+            "energy_storage": "🔋 Energy Storage"
+          }
+        }
+      },
+      "charger": {
+        "title": "Eway Charger Setup",
+        "description": "Choose configuration method",
+        "data": {
+          "config_method": "Configuration Method"
+        },
+        "data_description": {
+          "config_method": {
+            "manual": "🔧 Manual Configuration",
+            "discovered": "🔍 Use Discovered Device"
+          }
+        },
+        "menu_options": {
+          "manual": "Manual Configuration",
+          "discovery": "Auto Discovery"
+        }
+      },
+      "energy_storage": {
+        "title": "Eway Energy Storage Setup",
+        "description": "Choose configuration method",
+        "data": {
+          "config_method": "Configuration Method"
+        },
+        "data_description": {
+          "config_method": {
+            "manual": "🔧 Manual Configuration",
+            "discovered": "🔍 Use Discovered Device"
+          }
+        }
+      },
+      "manual_energy_storage": {
+        "title": "Manual Energy Storage Configuration",
+        "description": "Manually configure your Eway Energy Storage connection (Port is automatically set to 80)",
+        "data": {
+          "host": "Host",
+          "device_sn": "Device Serial Number"
+        }
+      },
+      "manual": {
+        "title": "Manual Configuration",
+        "description": "Manually configure your Eway Charger connection",
+        "data": {
+          "host": "Host",
+          "port": "Port",
+          "device_id": "Device ID",
+          "device_sn": "Device Serial Number",
+          "path": "Device Path"
+        }
+      },
+      "discovery": {
+        "title": "Select Discovered Device",
+        "description": "Choose a device to connect",
+        "data": {
+          "discovered_device": "Discovered Device"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "Confirm Discovered Device",
+        "description": "A device was automatically discovered: {name} at {host}:{port}. Please confirm the device information.",
+        "data": {
+          "device_id": "Device ID",
+          "device_sn": "Device Serial Number"
+        }
+      },
+      "wait_for_discovery": {
+        "title": "Waiting for Device Discovery",
+        "description": "Waiting for device discovery via Zeroconf... {info}"
+      }
+    },
+    "error": {
+      "cannot_connect": "Failed to connect to the charger. Please check the host and port.",
+      "invalid_auth": "Invalid authentication credentials.",
+      "unknown": "Unexpected error occurred.",
+      "no_devices_found": "No Eway devices found on the network. Please ensure the device is powered on and connected to the same network.",
+      "discovery_failed": "Device discovery failed. Please try manual configuration instead.",
+      "device_not_found": "Selected device is no longer available. Please try discovery again.",
+      "incomplete_discovery_info": "Incomplete discovery information",
+      "not_eway_device": "Not an Eway device"
+    },
+    "abort": {
+      "already_configured": "Device is already configured",
+      "no_devices_found": "No EwayCS-TFT devices found on the network. Make sure the devices are powered on and connected to the same network.",
+      "device_not_found": "Selected device is no longer available. Please try discovery again."
+    }
+  },
+  "options": {
+        "step": {
+            "init": {
+                "title": "Eway {device_type} Options",
+                "description": "Configure options for your Eway {device_type}. Select which sensors you want to enable.",
+                "data": {
+                    "enabled_sensors": "Enabled Sensors",
+                    "enabled_storage_sensors": "Enabled Storage Sensors",
+                    "scan_interval": "Scan Interval (seconds)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "app_firmware_version": {
+        "name": "App Firmware Version"
+      },
+      "charge_current": {
+        "name": "Charge Current"
+      },
+      "charge_status": {
+        "name": "Charge Status",
+        "state": {
+          "not_charging": "Not Charging",
+          "charging": "Charging",
+          "charge_complete": "Charge Complete",
+          "unknown": "Unknown"
+        }
+      },
+      "gun_status": {
+        "name": "Gun Status",
+        "state": {
+          "not_inserted": "Not Inserted",
+          "inserted": "Inserted",
+          "unknown": "Unknown"
+        }
+      },
+      "pile_status": {
+        "name": "Pile Status",
+        "state": {
+          "idle": "Idle",
+          "charging": "Charging",
+          "fault": "Fault",
+          "unknown": "Unknown"
+        }
+      },
+      "mcb_firmware_version": {
+        "name": "MCB Firmware Version"
+      },
+      "net_firmware_version": {
+        "name": "Network Firmware Version"
+      },
+      "net_source": {
+        "name": "Network Source",
+        "state": {
+          "wifi": "WiFi",
+          "4g": "4G",
+          "ethernet": "Ethernet",
+          "wifi_4g": "WiFi + 4G",
+          "wifi_ethernet": "WiFi + Ethernet",
+          "4g_ethernet": "4G + Ethernet",
+          "wifi_4g_ethernet": "WiFi + 4G + Ethernet",
+          "unknown": "Unknown"
+        }
+      },
+      "wifi_ssid": {
+        "name": "WiFi SSID"
+      },
+      "work_charge_time": {
+        "name": "Total Charge Time"
+      },
+      "work_this_time": {
+        "name": "Current Session Time"
+      },
+      "work_total_time": {
+        "name": "Total Work Time"
+      },
+      "last_charging_duration": {
+        "name": "Last Charging Duration"
+      },
+      "last_charging_degrees": {
+        "name": "Last Charging Degrees"
+      },
+      "last_charging_start_time": {
+        "name": "Last Charging Start Time"
+      },
+      "last_charging_end_time": {
+        "name": "Last Charging End Time"
+      },
+      "last_charging_stop_reason": {
+        "name": "Last Charging Stop Reason",
+        "state": {
+          "normal": "Normal Stop",
+          "user_stop": "User Stop",
+          "emergency_stop": "Emergency Stop",
+          "fault": "Fault Stop",
+          "timeout": "Timeout Stop",
+          "overheat": "Overheat Stop",
+          "overcurrent": "Overcurrent Stop",
+          "undervoltage": "Undervoltage Stop",
+          "overvoltage": "Overvoltage Stop",
+          "unknown": "Unknown Reason"
+        }
+      },
+      "last_charging_error_codes": {
+        "name": "Last Charging Error Codes"
+      },
+      "gun_lock": {
+        "name": "Gun Lock Status",
+        "state": {
+          "unlocked": "Unlocked",
+          "locked": "Locked",
+          "unknown": "Unknown"
+        }
+      },
+      "device_error_response": {
+          "name": "Device Error Response",
+          "state": {
+            "unknown": "Unknown"
+          }
+      },
+      "time_zone": {
+        "name": "Time Zone"
+      },
+      "storage_timestamp": {
+        "name": "Data Update Time"
+      },
+      "storage_protocol_version": {
+        "name": "Storage Protocol Version"
+      },
+      "storage_output_power": {
+        "name": "Storage Output Power"
+      },
+      "storage_pv_power": {
+        "name": "Storage PV Power"
+      },
+      "storage_battery_power": {
+        "name": "Storage Battery Power"
+      },
+      "storage_battery_soc": {
+        "name": "Storage Battery SOC"
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "Charging",
+        "state": {
+          "on": "Charging",
+          "off": "Not Charging"
+        }
+      },
+      "gun_connected": {
+        "name": "Gun Connected",
+        "state": {
+          "on": "Connected",
+          "off": "Disconnected"
+        }
+      },
+      "gun_locked": {
+        "name": "Gun Locked",
+        "state": {
+          "on": "Locked",
+          "off": "Unlocked"
+        }
+      },
+      "nfc_enabled": {
+        "name": "NFC Enabled",
+        "state": {
+          "on": "Enabled",
+          "off": "Disabled"
+        }
+      },
+      "connection": {
+        "name": "Connection Status",
+        "state": {
+          "on": "Connected",
+          "off": "Disconnected"
+        }
+      },
+      "error": {
+        "name": "Error Status",
+        "state": {
+          "on": "Error",
+          "off": "Normal"
+        }
+      }
+    }
+  }
+}
