@@ -1,348 +1,279 @@
-# Eway充电桩 Home Assistant 集成
+# Eway Charger and Energy Storage Home Assistant Integration
 
-一个功能完整的Home Assistant自定义集成，用于监控和控制Eway充电桩设备。
+A comprehensive Home Assistant custom integration for monitoring and controlling Eway charging stations and energy storage systems. Supports charging management for chargers and photovoltaic generation and battery storage monitoring for energy storage devices.
 
-## 目录
+## Table of Contents
 
-- [功能特性](#功能特性)
-- [安装方法](#安装方法)
-- [配置方式](#配置方式)
-- [传感器说明](#传感器说明)
-- [控制功能](#控制功能)
-- [响应处理](#响应处理)
-- [使用指南](#使用指南)
-- [测试说明](#测试说明)
-- [故障排除](#故障排除)
-- [开发说明](#开发说明)
+- [Features](#features)
+- [Installation](#installation)
+- [Configuration](#configuration)
+- [Sensors](#sensors)
+- [Control Functions](#control-functions)
+- [Response Handling](#response-handling)
+- [Troubleshooting](#troubleshooting)
+- [Development](#development)
 
-## 功能特性
+## Features
 
-### 核心功能
-- **自动设备发现**: 通过mDNS自动发现网络中的Eway充电桩
-- **实时状态监控**: 监控充电状态、电流、连接状态等
-- **远程控制**: 支持充电开关、电流调节、密码重置等控制功能
-- **NFC管理**: 支持NFC卡片的添加、删除和状态管理
-- **多语言支持**: 完整的中英文界面支持
-- **可配置传感器**: 用户可选择启用或禁用特定传感器
+### Core Functions
 
-### 支持的设备类型
-- Eway CS-TFT 系列充电桩
-- 支持WebSocket通信的Eway设备
-- 支持MQTT协议的充电桩设备
+#### Charger Functions
+- **Automatic Device Discovery**: Automatically discover Eway chargers on the network via mDNS
+- **Real-time Status Monitoring**: Monitor charging status, current, connection status, etc.
+- **Remote Control**: Support charging switch functionality
 
-## 安装方法
+#### Energy Storage Functions
+- **Photovoltaic Generation Monitoring**: Real-time power monitoring, daily and total generation statistics
+- **Battery Storage Management**: Battery SOC, charge/discharge power, energy statistics
+- **System Status Monitoring**: Energy storage system output power, protocol version, data timestamp
+- **Smart Data Processing**: Automatic unit conversion (W/kWh) and precision control
 
-### 方法一：通过HACS安装（推荐）
+#### General Functions
+- **Multi-device Type Support**: Simultaneous support for chargers and energy storage devices
+- **Multi-language Support**: Complete Chinese and English interface support
+- **Configurable Sensors**: Users can choose to enable or disable specific sensors
+- **Real-time Data Updates**: WebSocket connection ensures data real-time performance
 
-1. 确保已安装HACS
-2. 在HACS中添加自定义存储库
-3. 搜索"Eway Charger"并安装
-4. 重启Home Assistant
+### Supported Device Types
+- **Eway CS-TFT Series Chargers**: Support charging monitoring, control and NFC management
+- **Eway Energy Storage Devices**: Support photovoltaic generation, battery storage and energy management monitoring
+- **Eway Devices with WebSocket Communication**: Real-time data transmission and remote control
 
-### 方法二：手动安装
+## Installation
 
-1. 下载最新版本的集成文件
-2. 将`eway_charger`文件夹复制到`custom_components`目录
-3. 重启Home Assistant
-4. 在集成页面添加"Eway Charger"
+### Method 1: Install via HACS
 
-## 配置方式
+1. Ensure HACS is installed
+2. Add custom repository in HACS
+3. Search for "Eway" and install
+4. Restart Home Assistant
 
-### 自动发现配置
+### Method 2: Manual Installation
 
-1. 进入"配置" > "设备与服务"
-2. 点击"添加集成"
-3. 搜索"Eway Charger"
-4. 选择"自动发现"
-5. 系统将扫描网络中的设备
-6. 选择您的充电桩并完成配置
+1. Download the latest version of the integration files
+2. Copy the `eway` folder to the `custom_components` directory
+3. Restart Home Assistant
+4. Add "Eway" in the integrations page
 
-### 手动配置
+## Configuration
 
-1. 选择"手动配置"
-2. 输入以下信息：
-   - **主机地址**: 充电桩IP地址
-   - **端口**: WebSocket端口（默认8080）
-   - **设备ID**: 充电桩设备ID
-   - **设备序列号**: 充电桩序列号
+### Automatic Discovery Configuration
 
-### 传感器配置
+1. Go to "Configuration" > "Devices & Services"
+2. Click "Add Integration"
+3. Search for "Eway"
+4. Select "Automatic Discovery"
+5. The system will scan for devices on the network
+6. Select your charger and complete the configuration
 
-配置完成后可自定义传感器：
-1. 在集成页面点击"配置"
-2. 选择需要的传感器
-3. 设置扫描间隔（推荐30-60秒）
-4. 保存配置
+### Manual Configuration
 
-## 传感器说明
+#### Charger Device Configuration
 
-### 设备信息传感器
+1. Select "Manual Configuration"
+2. Select device type as "Charger"
+3. Enter the following information:
+   - **Host Address**: Charger IP address
+   - **Device ID**: Charger device ID
+   - **Device Serial Number**: Charger serial number
 
-| 传感器ID | 中文名称 | 英文名称 | 描述 |
+#### Energy Storage Device Configuration
+
+1. Select "Manual Configuration"
+2. Select device type as "Energy Storage"
+3. Enter the following information:
+   - **Host Address**: Energy storage device IP address
+   - **Device Serial Number**: Energy storage device serial number
+
+### Sensor Configuration
+
+After configuration, you can customize sensors:
+1. Click "Configure" on the integration page
+2. Select the required sensors
+3. Set scan interval (recommended 30-60 seconds)
+4. Save configuration
+
+## Sensors
+
+### Charger Sensors
+
+#### Device Information Sensors
+
+| Sensor ID | Chinese Name | English Name | Description |
 |----------|----------|----------|------|
-| `app_firmware_version` | 应用固件版本 | App Firmware Version | 应用固件版本信息 |
-| `charge_current` | 充电电流 | Charge Current | 当前充电电流值 |
-| `charge_status` | 充电状态 | Charge Status | 充电桩工作状态 |
-| `gun_status` | 充电枪状态 | Gun Status | 充电枪连接状态 |
-| `pile_status` | 充电桩状态 | Pile Status | 设备整体运行状态 |
-| `mcb_firmware_version` | MCB固件版本 | MCB Firmware Version | MCB控制板固件版本 |
-| `net_firmware_version` | 网络固件版本 | Net Firmware Version | 网络模块固件版本 |
-| `net_source` | 网络来源 | Net Source | 网络连接方式 |
-| `wifi_ssid` | WiFi SSID | WiFi SSID | 当前连接的WiFi名称 |
-| `work_charge_time` | 总充电时长 | Work Charge Time | 累计充电时间 |
-| `work_this_time` | 本次充电时长 | Work This Time | 当前会话充电时间 |
-| `work_total_time` | 总工作时长 | Work Total Time | 设备总运行时间 |
-| `gun_lock` | 充电枪锁状态 | Gun Lock | 充电枪锁定状态 |
-| `time_zone` | 时区 | Time Zone | 设备时区设置 |
+| `app_firmware_version` | 应用固件版本 | App Firmware Version | Application firmware version information |
+| `charge_current` | 充电电流 | Charge Current | Current charging current value |
+| `charge_status` | 充电状态 | Charge Status | Charger working status |
+| `gun_status` | 充电枪状态 | Gun Status | Charging gun connection status |
+| `pile_status` | 充电桩状态 | Pile Status | Device overall operating status |
+| `mcb_firmware_version` | MCB固件版本 | MCB Firmware Version | MCB control board firmware version |
+| `net_firmware_version` | 网络固件版本 | Net Firmware Version | Network module firmware version |
+| `net_source` | 网络来源 | Net Source | Network connection type |
+| `wifi_ssid` | WiFi SSID | WiFi SSID | Currently connected WiFi network name |
+| `work_charge_time` | 总充电时长 | Work Charge Time | Cumulative charging time |
+| `work_this_time` | 本次充电时长 | Work This Time | Current session charging time |
+| `work_total_time` | 总工作时长 | Work Total Time | Device total operating time |
+| `gun_lock` | 充电枪锁状态 | Gun Lock | Charging gun lock status |
+| `time_zone` | 时区 | Time Zone | Device timezone setting |
 
-### 二进制传感器
+#### Binary Sensors
 
-| 传感器ID | 中文名称 | 英文名称 | 描述 |
+| Sensor ID | Chinese Name | English Name | Description |
 |----------|----------|----------|------|
-| `charging` | 充电中 | Charging | 是否正在充电 |
-| `gun_connected` | 充电枪连接 | Gun Connected | 充电枪是否已连接 |
-| `gun_locked` | 充电枪锁定 | Gun Locked | 充电枪是否已锁定 |
-| `nfc_enabled` | NFC启用 | NFC Enabled | NFC功能是否启用 |
-| `connection` | 连接状态 | Connection | 设备网络连接状态 |
-| `error` | 错误状态 | Error | 是否存在错误 |
+| `charging` | 充电中 | Charging | Whether currently charging |
+| `gun_connected` | 充电枪连接 | Gun Connected | Whether charging gun is connected |
+| `gun_locked` | 充电枪锁定 | Gun Locked | Whether charging gun is locked |
+| `connection` | 连接状态 | Connection | Device network connection status |
+| `error` | 错误状态 | Error | Whether there are errors |
 
-### 响应传感器
+### Energy Storage Device Sensors
 
-| 传感器ID | 中文名称 | 英文名称 | 描述 |
+#### System Information Sensors
+
+| Sensor ID | Chinese Name | English Name | Unit | Description |
+|----------|----------|----------|------|------|
+| `storage_timestamp` | 数据更新时间 | Data Update Time | - | Energy storage data last update time |
+| `storage_protocol_version` | 储能协议版本 | Energy Storage Protocol Version | - | Energy storage device communication protocol version |
+| `storage_output_power` | 储能输出功率 | Energy Storage Output Power | W | Energy storage system current output power |
+
+#### Photovoltaic Generation Sensors
+
+| Sensor ID | Chinese Name | English Name | Unit | Precision | Description |
+|----------|----------|----------|------|------|------|
+| `storage_pv_power` | 储能PV功率 | Energy Storage PV Power | W | 1 decimal | Photovoltaic module current generation power |
+| `storage_pv_daily_generation` | 储能PV日发电量 | Energy Storage PV Daily Generation | kWh | 2 decimals | Photovoltaic module daily cumulative generation |
+| `storage_pv_total_generation` | 储能PV总发电量 | Energy Storage PV Total Generation | kWh | 2 decimals | Photovoltaic module total cumulative generation |
+
+#### Battery Storage Sensors
+
+| Sensor ID | Chinese Name | English Name | Unit | Precision | Description |
+|----------|----------|----------|------|------|------|
+| `storage_battery_power` | 储能电池功率 | Energy Storage Battery Power | W | 1 decimal | Battery current charge/discharge power (positive for charging, negative for discharging) |
+| `storage_battery_soc` | 储能电池SOC | Energy Storage Battery SOC | % | 1 decimal | Battery remaining charge percentage |
+| `storage_battery_daily_charge` | 储能电池日充电量 | Energy Storage Battery Daily Charge | kWh | 2 decimals | Battery daily cumulative charge |
+| `storage_battery_total_charge` | 储能电池总充电量 | Energy Storage Battery Total Charge | kWh | 2 decimals | Battery total cumulative charge |
+| `storage_battery_daily_discharge` | 储能电池日放电量 | Energy Storage Battery Daily Discharge | kWh | 2 decimals | Battery daily cumulative discharge |
+| `storage_battery_total_discharge` | 储能电池总放电量 | Energy Storage Battery Total Discharge | kWh | 2 decimals | Battery total cumulative discharge |
+
+### Response Sensors
+
+| Sensor ID | Chinese Name | English Name | Description |
 |----------|----------|----------|------|
-| `charging_control_response` | 充电控制响应 | Charging Control Response | 充电开关控制响应 |
-| `device_error_response` | 设备错误响应 | Device Error Response | 设备错误状态响应 |
-| `device_status_responses` | 设备状态响应 | Device Status Responses | 设备状态查询响应 |
+| `charging_control_response` | 充电控制响应 | Charging Control Response | Charging switch control response |
+| `device_error_response` | 设备错误响应 | Device Error Response | Device error status response |
+| `device_status_responses` | 设备状态响应 | Device Status Responses | Device status query response |
 
-## 控制功能
+## Control Functions
 
-### 充电控制
+### Charging Control
 
-#### 充电开关控制
-- **实体类型**: Switch（开关）
-- **功能**: 启动/停止充电
-- **协议**: 通过`/function/get`主题发送控制指令
+#### Charging Switch Control
+- **Entity Type**: Switch
+- **Function**: Start/stop charging
+- **Protocol**: Send control commands via `/function/get` topic
 
-**使用方法**:
-1. 在Home Assistant中找到"充电开关"实体
-2. 点击开关控制充电启停
-3. 系统会自动发送相应的MQTT指令
+**Usage**:
+1. Find the "Charging Switch" entity in Home Assistant
+2. Click the switch to control charging start/stop
 
-## 响应处理
+## Response Handling
 
-### 充电控制响应
-当执行充电控制操作后，设备会返回响应消息，包含以下信息：
-- 操作结果（成功/失败）
-- 当前充电状态
-- 响应时间戳
-- 详细的状态信息
+### Charging Control Response
+After executing charging control operations, the device returns response messages containing:
+- Operation result (success/failure)
+- Current charging status
+- Response timestamp
+- Detailed status information
 
-### 设备状态响应
-设备状态查询的响应包含：
-- 充电枪状态（gun-status）
-- 充电状态（charge-status）
-- 充电桩状态（pile-status）
-- 详细的状态值和描述
+### Device Status Response
+Device status query responses contain:
+- Gun status (gun-status)
+- Charging status (charge-status)
+- Pile status (pile-status)
+- Detailed status values and descriptions
 
-### 错误响应处理
-当设备出现错误时，会返回错误响应：
-- 错误代码
-- 错误描述
-- 错误发生时间
-- 错误级别（警告/错误/严重）
+### Error Response Handling
+When device errors occur, error responses are returned:
+- Error code
+- Error description
+- Error occurrence time
+- Error level (warning/error/critical)
 
-## 使用指南
+## Troubleshooting
 
-### 仪表板配置示例
+### Common Issues
 
-#### 基础监控卡片
-```yaml
-type: entities
-title: Eway充电桩状态
-entities:
-  - sensor.eway_charger_charge_status
-  - binary_sensor.eway_charger_charging
-  - binary_sensor.eway_charger_gun_connected
-  - sensor.eway_charger_charge_current
-```
+#### Device Discovery Failure
+1. **Check Network Connection**: Ensure Home Assistant and charger are on the same LAN
+2. **Check Firewall**: Ensure mDNS port (5353) is not blocked
+3. **Check Device Status**: Ensure charger is powered on and connected to network
+4. **Manual Configuration**: If automatic discovery fails, try manual configuration
 
-#### 控制面板卡片
-```yaml
-type: entities
-title: 充电控制
-entities:
-  - switch.eway_charger_charging_switch
-```
+#### WebSocket Connection Failure
+1. **Check Port**: Confirm WebSocket port (usually 80) is correct
+2. **Check Device ID**: Verify device ID and serial number are correct
+3. **Network Latency**: Increase connection timeout
+4. **Restart Device**: Try restarting the charger device
 
-#### 设备信息卡片
-```yaml
-type: entities
-title: 设备信息
-entities:
-  - sensor.eway_charger_app_firmware_version
-  - sensor.eway_charger_mcb_firmware_version
-  - sensor.eway_charger_net_firmware_version
-  - sensor.eway_charger_wifi_ssid
-```
+#### Sensor Data Anomalies
+1. **Check Scan Interval**: Avoid setting too short scan intervals
+2. **View Logs**: Check Home Assistant logs for error information
+3. **Reconfigure**: Try deleting and re-adding the integration
+4. **Firmware Version**: Confirm charger firmware version compatibility
 
-### 自动化示例
+#### Control Commands Not Responding
+1. **Check Permissions**: Confirm device allows remote control
+2. **Network Status**: Check device network connection status
+3. **Command Format**: Verify sent command format is correct
+4. **Device Mode**: Confirm device is in controllable state
 
-#### 充电完成通知
-```yaml
-alias: "充电完成通知"
-trigger:
-  - platform: state
-    entity_id: sensor.eway_charger_charge_status
-    to: "充电完成"
-action:
-  - service: notify.mobile_app
-    data:
-      message: "充电桩充电已完成"
-      title: "充电通知"
-```
+#### Energy Storage Device Data Anomalies
+1. **Check Data Format**: Confirm energy storage device returns correct JSON data format
+2. **Unit Conversion**: Verify power and energy data unit conversion is correct
+3. **Data Precision**: Check sensor data decimal places display
+4. **Timestamp**: Confirm data update timestamp is normal
 
-#### 错误状态监控
-```yaml
-alias: "充电桩错误监控"
-trigger:
-  - platform: state
-    entity_id: binary_sensor.eway_charger_error
-    to: "on"
-action:
-  - service: notify.mobile_app
-    data:
-      message: "充电桩出现错误，请检查设备状态"
-      title: "设备警告"
-```
+#### Photovoltaic Generation Data Inaccuracy
+1. **Weather Impact**: Consider weather conditions' impact on photovoltaic generation
+2. **Device Calibration**: Check if photovoltaic components need calibration
+3. **Obstruction Check**: Confirm photovoltaic panels are not obstructed
+4. **Device Status**: Verify photovoltaic inverter working status
 
-## 测试说明
+#### Battery Data Display Issues
+1. **SOC Calibration**: Check battery management system SOC calibration
+2. **Charge/Discharge Status**: Confirm battery charge/discharge status displays correctly
+3. **Capacity Settings**: Verify battery capacity configuration is correct
+4. **Temperature Impact**: Consider temperature impact on battery performance
 
-### 测试环境要求
-- Python 3.8 或更高版本
-- 与Eway设备在同一局域网内
-- 安装必要的依赖包：`pip install zeroconf websockets`
+## Development
 
-### 独立测试脚本
-
-#### 完整功能测试
-```bash
-# 使用默认设置（10秒发现超时）
-python test_standalone.py
-
-# 自定义发现超时时间（15秒）
-python test_standalone.py 15
-```
-
-#### 设备发现专用测试
-```bash
-# 使用默认设置
-python test_discovery_only.py
-
-# 自定义超时时间和设备前缀
-python test_discovery_only.py 20 EwayCS-TFT
-```
-
-### 功能测试
-
-#### NFC卡片响应测试
-```bash
-python test_nfc_card_responses.py
-```
-
-测试内容包括：
-- NFC卡片添加响应处理
-- NFC卡片删除响应处理
-- 无响应数据的情况处理
-- 多张卡片操作测试
-
-## 故障排除
-
-### 常见问题
-
-#### 设备发现失败
-1. **检查网络连接**: 确保Home Assistant与充电桩在同一局域网
-2. **检查防火墙**: 确保mDNS端口（5353）未被阻止
-3. **检查设备状态**: 确保充电桩已开机并连接到网络
-4. **手动配置**: 如果自动发现失败，尝试手动配置
-
-#### WebSocket连接失败
-1. **检查端口**: 确认WebSocket端口（通常8080）是否正确
-2. **检查设备ID**: 验证设备ID和序列号是否正确
-3. **网络延迟**: 增加连接超时时间
-4. **重启设备**: 尝试重启充电桩设备
-
-#### 传感器数据异常
-1. **检查扫描间隔**: 避免设置过短的扫描间隔
-2. **查看日志**: 检查Home Assistant日志中的错误信息
-3. **重新配置**: 尝试删除并重新添加集成
-4. **固件版本**: 确认充电桩固件版本兼容
-
-#### 控制指令无响应
-1. **检查权限**: 确认设备允许远程控制
-2. **网络状态**: 检查设备网络连接状态
-3. **指令格式**: 验证发送的指令格式是否正确
-4. **设备模式**: 确认设备处于可控制状态
-
-### 日志调试
-
-在`configuration.yaml`中启用调试日志：
-```yaml
-logger:
-  default: info
-  logs:
-    custom_components.eway_charger: debug
-```
-
-### 网络诊断
-
-#### 检查mDNS服务
-```bash
-# macOS/Linux
-avahi-browse -rt _http._tcp
-
-# Windows
-dns-sd -B _http._tcp
-```
-
-#### 检查WebSocket连接
-```bash
-# 使用curl测试WebSocket
-curl -i -N -H "Connection: Upgrade" \
-     -H "Upgrade: websocket" \
-     -H "Sec-WebSocket-Key: test" \
-     -H "Sec-WebSocket-Version: 13" \
-     http://[设备IP]:8080/
-```
-
-## 开发说明
-
-### 项目结构
+### Project Structure
 ```
 eway_charger/
-├── __init__.py              # 集成初始化
-├── config_flow.py           # 配置流程
-├── const.py                 # 常量定义
-├── coordinator.py           # 数据协调器
-├── device_discovery.py      # 设备发现
-├── sensor.py               # 传感器实体
-├── binary_sensor.py        # 二进制传感器
-├── switch.py               # 开关实体
-├── websocket_client.py     # WebSocket客户端
-├── translations/           # 多语言翻译
+├── __init__.py              # Integration initialization
+├── config_flow.py           # Configuration flow
+├── const.py                 # Constants definition
+├── coordinator.py           # Data coordinator
+├── device_discovery.py      # Device discovery
+├── sensor.py               # Sensor entities
+├── binary_sensor.py        # Binary sensors
+├── switch.py               # Switch entities
+├── websocket_client.py     # WebSocket client
+├── translations/           # Multi-language translations
 │   ├── en.json
 │   └── zh.json
-└── manifest.json           # 集成清单
+└── manifest.json           # Integration manifest
 ```
 
-### 协议说明
+### Protocol Description
 
-#### MQTT主题格式
-- **属性获取**: `/设备ID/设备SN/property/get`
-- **属性响应**: `/设备ID/设备SN/property/post`
-- **功能控制**: `/设备ID/设备SN/function/get`
-- **功能响应**: `/设备ID/设备SN/function/post`
+#### MQTT Topic Format
+- **Property Get**: `/device_id/device_sn/property/get`
+- **Property Response**: `/device_id/device_sn/property/post`
+- **Function Control**: `/device_id/device_sn/function/get`
+- **Function Response**: `/device_id/device_sn/function/post`
 
-#### WebSocket消息格式
+#### WebSocket Message Format
 ```json
 {
   "topic": "/device_id/device_sn/property/get",
@@ -355,62 +286,53 @@ eway_charger/
 }
 ```
 
-### 扩展开发
+### Extension Development
 
-#### 添加新传感器
-1. 在`const.py`中定义传感器配置
-2. 在`sensor.py`中实现传感器类
-3. 在翻译文件中添加多语言支持
-4. 更新文档说明
+#### Adding New Sensors
+1. Define sensor configuration in `const.py`
+2. Implement sensor class in `sensor.py`
+3. Add multi-language support in translation files
+4. Update documentation
 
-#### 添加新控制功能
-1. 选择合适的实体类型（switch/number/text等）
-2. 实现控制逻辑和协议格式
-3. 添加响应处理逻辑
-4. 编写测试用例
+#### Adding New Control Functions
+1. Choose appropriate entity type (switch/number/text etc.)
+2. Implement control logic and protocol format
+3. Add response handling logic
+4. Write test cases
 
-### 版本历史
+### Version History
 
-#### v1.0.0
-- 初始版本发布
-- 基础设备发现和连接功能
-- 核心传感器支持
+#### v0.1.0
+- Initial release
+- Basic device discovery and connection functionality
+- Core sensor support
 
-#### v1.1.0
-- 新增充电控制功能
-- 新增电流调节功能
-- 改进错误处理
+#### v0.2.0 - Energy Storage Support
+- **New Energy Storage Device Type Support**: Complete energy storage device monitoring functionality
+- **Photovoltaic Generation Monitoring**: Real-time power, daily generation, total generation sensors
+- **Battery Storage Management**: Battery power, SOC, charge/discharge monitoring
+- **Data Processing Enhancement**: Automatic unit conversion (W/kWh) and precision control
+- **Multi-language Support**: Chinese and English translations for energy storage sensors
+- **Configuration Flow Optimization**: Support for automatic discovery and manual configuration of energy storage devices
+- **Dashboard Templates**: Provide energy storage system monitoring card configuration examples
+- **Automation Templates**: Battery management and photovoltaic generation automation examples
+- **Test Validation**: Complete energy storage functionality test suite
 
-#### v1.2.0
-- 新增NFC管理功能
-- 新增密码重置功能
-- 新增网络模式控制
+## License
 
-#### v1.3.0
-- 新增响应传感器系统
-- 改进数据处理逻辑
-- 增强错误诊断功能
+This project is licensed under the MIT License. See the LICENSE file for details.
 
-#### v1.4.0
-- 新增NFC卡片管理响应
-- 完善设备状态响应处理
-- 优化用户界面体验
+## Contributing
 
-## 许可证
+Issues and Pull Requests are welcome to improve this project.
 
-本项目采用MIT许可证，详见LICENSE文件。
+## Support
 
-## 贡献
-
-欢迎提交Issue和Pull Request来改进这个项目。
-
-## 支持
-
-如果您在使用过程中遇到问题，请：
-1. 查看本文档的故障排除部分
-2. 检查GitHub Issues中的已知问题
-3. 提交新的Issue描述您的问题
+If you encounter problems during use, please:
+1. Check the troubleshooting section of this documentation
+2. Check known issues in GitHub Issues
+3. Submit a new Issue describing your problem
 
 ---
 
-**注意**: 本集成仅适用于支持相应协议的Eway充电桩设备。使用前请确认您的设备型号和固件版本的兼容性。
+**Note**: This integration is only compatible with Eway charger devices that support the corresponding protocols. Please confirm your device model and firmware version compatibility before use.
