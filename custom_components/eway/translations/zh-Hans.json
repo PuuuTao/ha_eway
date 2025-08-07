@@ -1,0 +1,401 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Eway 设备设置",
+        "description": "选择要配置的设备类型",
+        "data": {
+          "device_type": "设备类型"
+        },
+        "data_description": {
+          "device_type": {
+            "charger": "🔌 充电桩",
+            "energy_storage": "🔋 储能"
+          }
+        }
+      },
+      "charger": {
+        "title": "Eway 充电桩设置",
+        "description": "选择配置方法",
+        "data": {
+          "config_method": "配置方法"
+        },
+        "data_description": {
+          "config_method": {
+            "manual": "🔧 手动配置",
+            "discovered": "🔍 使用已发现设备"
+          }
+        }
+      },
+      "discovery": {
+        "title": "选择已发现的设备",
+        "description": "选择要连接的设备",
+        "data": {
+          "discovered_device": "已发现设备"
+        }
+      },
+      "discovery_energy_storage": {
+        "title": "选择已发现的储能设备",
+        "description": "选择要连接的储能设备",
+        "data": {
+          "discovered_device": "已发现储能设备"
+        }
+      },
+      "energy_storage": {
+        "title": "Eway 储能设置",
+        "description": "选择配置方法",
+        "data": {
+          "config_method": "配置方法"
+        },
+        "data_description": {
+          "config_method": {
+            "manual": "🔧 手动配置",
+            "discovered": "🔍 使用已发现设备"
+          }
+        }
+      },
+      "manual_energy_storage": {
+        "title": "手动储能设备配置",
+        "description": "手动配置您的Eway储能设备连接（端口自动设置为80）",
+        "data": {
+          "host": "主机地址",
+          "device_sn": "设备序列号"
+        }
+      },
+      "manual": {
+        "title": "手动配置",
+        "description": "手动配置您的 Eway 充电桩连接",
+        "data": {
+          "host": "主机地址",
+          "port": "端口",
+          "device_id": "设备 ID",
+          "device_sn": "设备序列号"
+        }
+      },
+      "zeroconf_confirm": {
+        "title": "确认发现的设备",
+        "description": "自动发现了设备：{name}，地址：{host}:{port}。请确认设备信息。",
+        "data": {
+          "device_id": "设备ID",
+          "device_sn": "设备序列号"
+        }
+      },
+      "wait_for_discovery": {
+        "title": "等待设备发现",
+        "description": "正在通过Zeroconf等待设备发现... {info}"
+      }
+    },
+    "error": {
+      "cannot_connect": "连接失败",
+      "invalid_auth": "认证失败",
+      "unknown": "未知错误"
+    },
+    "abort": {
+      "already_configured": "设备已配置",
+      "no_devices_found": "网络中未发现Eway设备。请确保设备已开机并连接到同一网络。",
+      "discovery_failed": "设备发现失败。请尝试手动配置。",
+      "device_not_found": "所选设备不再可用。请重新尝试发现。",
+      "incomplete_discovery_info": "发现信息不完整",
+      "not_eway_device": "不是Eway设备"
+      }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Eway{device_type}选项",
+        "description": "配置您的Eway{device_type}选项。选择您要启用的传感器。",
+        "data": {
+          "enabled_sensors": "启用的传感器",
+          "enabled_storage_sensors": "启用的储能传感器",
+          "scan_interval": "扫描间隔（秒）"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "app_firmware_version": {
+        "name": "应用固件版本"
+      },
+      "charge_current": {
+        "name": "充电电流"
+      },
+      "charge_status": {
+        "name": "充电状态",
+        "state": {
+          "not_charging": "未充电",
+          "charging": "充电中",
+          "charge_complete": "充电完成",
+          "unknown": "未知"
+        }
+      },
+      "gun_status": {
+        "name": "充电枪状态",
+        "state": {
+          "not_inserted": "未插入",
+          "inserted": "已插入",
+          "unknown": "未知"
+        }
+      },
+      "pile_status": {
+        "name": "充电桩状态",
+        "state": {
+          "idle": "空闲",
+          "charging": "充电中",
+          "fault": "故障",
+          "unknown": "未知"
+        }
+      },
+      "mcb_firmware_version": {
+        "name": "MCB固件版本"
+      },
+      "net_firmware_version": {
+        "name": "网络固件版本"
+      },
+      "net_source": {
+        "name": "网络来源",
+        "state": {
+          "wifi": "WiFi",
+          "4g": "4G",
+          "ethernet": "以太网",
+          "wifi_4g": "WiFi + 4G",
+          "wifi_ethernet": "WiFi + 以太网",
+          "4g_ethernet": "4G + 以太网",
+          "wifi_4g_ethernet": "WiFi + 4G + 以太网",
+          "unknown": "未知"
+        }
+      },
+      "wifi_ssid": {
+        "name": "WiFi名称"
+      },
+      "work_charge_time": {
+        "name": "总充电时长"
+      },
+      "work_this_time": {
+        "name": "本次充电时长"
+      },
+      "work_total_time": {
+        "name": "总工作时长"
+      },
+      "last_charging_duration": {
+        "name": "上次充电时长"
+      },
+      "last_charging_degrees": {
+        "name": "上次充电电量"
+      },
+      "last_charging_start_time": {
+        "name": "上次充电开始时间"
+      },
+      "last_charging_end_time": {
+        "name": "上次充电结束时间"
+      },
+      "last_charging_stop_reason": {
+        "name": "上次充电停止原因",
+        "state": {
+          "normal": "正常停止",
+          "user_stop": "用户停止",
+          "emergency_stop": "紧急停止",
+          "fault": "故障停止",
+          "timeout": "超时停止",
+          "overheat": "过热停止",
+          "overcurrent": "过流停止",
+          "undervoltage": "欠压停止",
+          "overvoltage": "过压停止",
+          "unknown": "未知原因"
+        }
+      },
+      "last_charging_error_codes": {
+        "name": "上次充电错误代码"
+      },
+      "gun_lock": {
+        "name": "充电枪锁状态",
+        "state": {
+          "unlocked": "已解锁",
+          "locked": "已锁定",
+          "unknown": "未知"
+        }
+      },
+      "time_zone": {
+        "name": "时区"
+      },
+      "device_error_response": {
+        "name": "设备错误响应",
+        "state": {
+          "no_errors": "无错误",
+          "1_errors": "1个错误",
+          "2_errors": "2个错误",
+          "3_errors": "3个错误",
+          "4_errors": "4个错误",
+          "5_errors": "5个错误",
+          "unknown": "未知"
+        }
+      },
+      "device_status_responses": {
+        "name": "设备状态响应",
+        "state": {
+          "0_status_changes": "无状态变化",
+          "1_status_changes": "1个状态变化",
+          "2_status_changes": "2个状态变化",
+          "3_status_changes": "3个状态变化",
+          "4_status_changes": "4个状态变化",
+          "5_status_changes": "5个状态变化",
+          "gun_status": "枪状态",
+          "charge_status": "充电状态",
+          "pile_status": "桩状态",
+          "connected": "已连接",
+          "disconnected": "未连接",
+          "not_charging": "未充电",
+          "charging": "充电中",
+          "charge_complete": "充电完成",
+          "idle": "空闲",
+          "fault": "故障"
+        }
+      },
+      "device_charging_status": {
+        "name": "设备充电状态",
+        "state": {
+          "not_charging": "未充电",
+          "charging": "充电中",
+          "charge_complete": "充电完成",
+          "unknown": "未知"
+        }
+      },
+      "device_gun_status": {
+        "name": "设备充电枪状态",
+        "state": {
+          "not_inserted": "未插入",
+          "inserted": "已插入",
+          "unknown": "未知"
+        }
+      },
+      "device_pile_status": {
+        "name": "设备充电桩状态",
+        "state": {
+          "idle": "空闲",
+          "charging": "充电中",
+          "fault": "故障",
+          "unknown": "未知"
+        }
+      },
+      "realtime_amount": {
+        "name": "充电电量"
+      },
+      "realtime_current": {
+        "name": "充电电流"
+      },
+      "realtime_current_l1": {
+        "name": "L1相电流"
+      },
+      "realtime_current_l2": {
+        "name": "L2相电流"
+      },
+      "realtime_current_l3": {
+        "name": "L3相电流"
+      },
+      "realtime_duration": {
+        "name": "充电时长"
+      },
+      "realtime_duty_cycle": {
+        "name": "CP占空比"
+      },
+      "realtime_imt4g_rssi": {
+        "name": "4G信号强度"
+      },
+      "realtime_moisture": {
+        "name": "湿度"
+      },
+      "realtime_power": {
+        "name": "充电功率"
+      },
+      "realtime_temperature": {
+        "name": "温度"
+      },
+      "realtime_voltage": {
+        "name": "电压"
+      },
+      "realtime_wifi_rssi": {
+        "name": "WiFi信号强度"
+      },
+      "storage_timestamp": {
+        "name": "数据更新时间"
+      },
+      "storage_protocol_version": {
+        "name": "储能协议版本"
+      },
+      "storage_output_power": {
+        "name": "储能输出功率"
+      },
+      "storage_pv_power": {
+        "name": "储能PV功率"
+      },
+      "storage_pv_daily_generation": {
+        "name": "储能PV日发电量"
+      },
+      "storage_pv_total_generation": {
+        "name": "储能PV总发电量"
+      },
+      "storage_battery_power": {
+        "name": "储能电池功率"
+      },
+      "storage_battery_soc": {
+        "name": "储能电池SOC"
+      },
+      "storage_battery_daily_charge": {
+        "name": "储能电池日充电量"
+      },
+      "storage_battery_total_charge": {
+        "name": "储能电池总充电量"
+      },
+      "storage_battery_daily_discharge": {
+        "name": "储能电池日放电量"
+      },
+      "storage_battery_total_discharge": {
+        "name": "储能电池总放电量"
+      }
+    },
+    "binary_sensor": {
+      "charging": {
+        "name": "充电中",
+        "state": {
+          "on": "充电中",
+          "off": "未充电"
+        }
+      },
+      "gun_connected": {
+        "name": "充电枪连接",
+        "state": {
+          "on": "已连接",
+          "off": "未连接"
+        }
+      },
+      "gun_locked": {
+        "name": "充电枪锁定",
+        "state": {
+          "on": "已锁定",
+          "off": "未锁定"
+        }
+      },
+      "nfc_enabled": {
+        "name": "NFC启用",
+        "state": {
+          "on": "已启用",
+          "off": "未启用"
+        }
+      },
+      "connection": {
+        "name": "连接状态",
+        "state": {
+          "on": "已连接",
+          "off": "未连接"
+        }
+      },
+      "error": {
+        "name": "错误状态",
+        "state": {
+          "on": "有错误",
+          "off": "正常"
+        }
+      }
+    }
+  }
+}
