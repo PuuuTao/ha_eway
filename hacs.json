@@ -1,7 +1,7 @@
 {
   "name": "Eway",
   "content_in_root": false,
-  "domains": ["eway_cp"],
+  "domains": ["eway"],
   "homeassistant": "2023.1.0",
   "render_readme": true
 }
