@@ -341,6 +341,11 @@
         "name": "Energy Storage Battery Total Discharge"
       }
     },
+    "number": {
+      "storage_power": {
+        "name": "Storage Power Control"
+      }
+    },
     "binary_sensor": {
       "charging": {
         "name": "Charging",

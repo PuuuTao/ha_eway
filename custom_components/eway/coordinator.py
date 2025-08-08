@@ -7,6 +7,7 @@ from datetime import timedelta
 import json
 import logging
 import time
+import uuid
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -200,38 +201,92 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("Received device info response from topic: %s", topic)
 
-        # Extract useful device information
-        device_info = {
-            "app_firmware_version": payload.get("appFirmVer"),
-            "mcb_firmware_version": payload.get("mcbFirmVer"),
-            "net_firmware_version": payload.get("netFirmVer"),
-            "ui_firmware_version": payload.get("uiFirmVer"),
-            "charge_current": payload.get("chargCurrent"),
-            "charge_status": payload.get("chargeStatus"),
-            "gun_status": payload.get("gunStatus"),
-            "gun_lock": payload.get("gunLock"),
-            "pile_status": payload.get("pileStatus"),
-            "error_codes": payload.get("errCode", []),
-            "block_errors": payload.get("blockError"),
-            "card_list": payload.get("cardList", []),
-            "network_way": payload.get("networkWay"),
-            "net_source": payload.get("netSource"),
-            "wifi_ssid": payload.get("wifiSsid"),
-            "nfc_enable": payload.get("nfcEnable"),
-            "time_zone": payload.get("timeZone"),
-            "work_charge": payload.get("workCharg"),
-            "work_this": payload.get("workThis"),
-            "work_total": payload.get("workTotal"),
-            "board_info": payload.get("board", []),
-        }
+        # Check if this is a storage device info response
+        if self._device_type == "energy_storage":
+            _LOGGER.info("Processing storage device info response")
 
-        # Store device info in a separate key
-        self._device_data["device_info"] = device_info
+            # Extract storage device specific information
+            work_mode_info = payload.get("workModeInfo", {})
+            work_mode = work_mode_info.get("workMode")
+            extend_info = work_mode_info.get("extend", {})
+            constant_power = extend_info.get("constantPower", 0)
 
-        _LOGGER.info("Device info parsed: %s", device_info)
+            _LOGGER.info("Storage workModeInfo: workMode=%s, constantPower=%s", work_mode, constant_power)
+
+            # Store storage info response for async_get_storage_info method
+            if hasattr(self, '_pending_info_request'):
+                self._storage_info_response = {
+                    "workMode": work_mode,
+                    "constantPower": constant_power,
+                    "workModeInfo": work_mode_info,
+                    "payload": payload
+                }
+                _LOGGER.info("Stored storage info response for pending request")
+
+            # Store in device data for entities to access
+            storage_info = {
+                "net_protocol_ver": payload.get("netProtocolVer"),
+                "mcu_protocol_ver": payload.get("mcuProtocolVer"),
+                "product_code": payload.get("productCode"),
+                "device_num": payload.get("deviceNum"),
+                "net_firm_ver": payload.get("netFirmVer"),
+                "mcu_firm_ver": payload.get("mcuFirmVer"),
+                "battery_info": payload.get("batteryInfo", []),
+                "wifi_info": payload.get("wifiInfo", {}),
+                "device_main_data_interval": payload.get("deviceMainDataInterval"),
+                "pv_data_interval": payload.get("pvDataInterval"),
+                "battery_data_interval": payload.get("batteryDataInterval"),
+                "soc": payload.get("soc"),
+                "dod": payload.get("dod"),
+                "work_mode": work_mode,
+                "constant_power": constant_power,
+                "work_mode_info": work_mode_info
+            }
+
+            self._device_data["storage_info"] = storage_info
+            _LOGGER.info("Storage device info parsed and stored")
+
+        else:
+            # Handle charger device info response (original logic)
+            device_info = {
+                "app_firmware_version": payload.get("appFirmVer"),
+                "mcb_firmware_version": payload.get("mcbFirmVer"),
+                "net_firmware_version": payload.get("netFirmVer"),
+                "ui_firmware_version": payload.get("uiFirmVer"),
+                "charge_current": payload.get("chargCurrent"),
+                "charge_status": payload.get("chargeStatus"),
+                "gun_status": payload.get("gunStatus"),
+                "gun_lock": payload.get("gunLock"),
+                "pile_status": payload.get("pileStatus"),
+                "error_codes": payload.get("errCode", []),
+                "block_errors": payload.get("blockError"),
+                "card_list": payload.get("cardList", []),
+                "network_way": payload.get("networkWay"),
+                "net_source": payload.get("netSource"),
+                "wifi_ssid": payload.get("wifiSsid"),
+                "nfc_enable": payload.get("nfcEnable"),
+                "time_zone": payload.get("timeZone"),
+                "work_charge": payload.get("workCharg"),
+                "work_this": payload.get("workThis"),
+                "work_total": payload.get("workTotal"),
+                "board_info": payload.get("board", []),
+            }
+
+            # Store device info in a separate key
+            self._device_data["device_info"] = device_info
+            _LOGGER.info("Charger device info parsed: %s", device_info)
 
         # Update device registry with new firmware version
-        self._update_device_registry(device_info)
+        if self._device_type == "energy_storage":
+            # For storage devices, create device info from payload
+            registry_info = {
+                "protocol_version": payload.get("netProtocolVer"),
+                "app_firmware_version": payload.get("netFirmVer"),
+            }
+            self._update_device_registry(registry_info)
+        else:
+            # For charger devices, use the parsed device_info
+            self._update_device_registry(device_info)
 
         # Notify all entities that device info has been updated
         self.async_set_updated_data(self._device_data.copy())
@@ -894,6 +949,82 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
         }
         _LOGGER.info("Sending stop charging command: %s", command)
         await self.async_send_command(command)
+
+    async def async_set_storage_power(self, power: int) -> None:
+        """Set energy storage device power."""
+        if not self._device_sn:
+            raise ValueError("Device SN is required for storage power control")
+
+        # Generate UUID and remove dashes
+        message_id = str(uuid.uuid4()).replace("-", "")
+
+        # Get current timestamp in milliseconds
+        timestamp = int(time.time() * 1000)
+
+        command = {
+            "topic": f"/{self._device_sn}/property/get",
+            "payload": {
+                "timestamp": timestamp,
+                "messageId": message_id,
+                "productCode": "EwayES",
+                "deviceNum": self._device_sn,
+                "source": "ws",
+                "property": [
+                    {
+                        "id": "workMode",
+                        "value": "0",
+                        "extend": {
+                            "constantPower": power
+                        }
+                    }
+                ]
+            }
+        }
+        _LOGGER.info("Sending storage power control command: %s", command)
+        await self.async_send_command(command)
+
+    async def async_get_storage_info(self) -> dict[str, Any] | None:
+        """Get energy storage device information."""
+        if not self._device_sn:
+            raise ValueError("Device SN is required for storage info request")
+
+        # Generate UUID and remove dashes
+        message_id = str(uuid.uuid4()).replace("-", "")
+
+        # Get current timestamp in milliseconds
+        timestamp = int(time.time() * 1000)
+
+        command = {
+            "topic": f"/{self._device_sn}/info/get",
+            "payload": {
+                "timestamp": timestamp,
+                "messageId": message_id,
+                "source": "ws"
+            }
+        }
+
+        _LOGGER.info("Sending storage info request command: %s", command)
+
+        # Store the message ID to track the response
+        self._pending_info_request = message_id
+
+        try:
+            await self.async_send_command(command)
+
+            # Wait for response (with timeout)
+            for _ in range(50):  # Wait up to 5 seconds (50 * 0.1s)
+                await asyncio.sleep(0.1)
+                if hasattr(self, '_storage_info_response') and self._storage_info_response:
+                    response = self._storage_info_response
+                    self._storage_info_response = None  # Clear the response
+                    return response
+
+            _LOGGER.warning("Timeout waiting for storage info response")
+            return None
+
+        except Exception as exc:
+            _LOGGER.error("Failed to get storage info: %s", exc)
+            raise
 
     def _update_device_registry(self, device_info: dict[str, Any]) -> None:
         """Update device registry with new firmware version."""

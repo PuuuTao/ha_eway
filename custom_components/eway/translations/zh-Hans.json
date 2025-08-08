@@ -353,6 +353,11 @@
         "name": "储能电池总放电量"
       }
     },
+    "number": {
+      "storage_power": {
+        "name": "储能功率控制"
+      }
+    },
     "binary_sensor": {
       "charging": {
         "name": "充电中",
