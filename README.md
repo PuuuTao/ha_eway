@@ -176,6 +176,88 @@ After configuration, you can customize sensors:
 1. Find the "Charging Switch" entity in Home Assistant
 2. Click the switch to control charging start/stop
 
+### Energy Storage Control
+
+#### Storage Power Control
+- **Entity Type**: Number (Slider)
+- **Function**: Set energy storage device output power
+- **Range**: 0-800W
+- **Unit**: Watts (W)
+- **Protocol**: Send control commands via `/property/get` topic
+
+**Usage**:
+1. Find the "Storage Power Control" entity in Home Assistant
+2. Use the slider to set desired output power (0-800W)
+3. The device will adjust its output power accordingly
+
+**Command Format**:
+```json
+{
+  "topic": "/{device_sn}/property/get",
+  "payload": {
+    "timestamp": 1740448316070,
+    "messageId": "generated_uuid_without_dashes",
+    "productCode": "EwayES",
+    "deviceNum": "{device_sn}",
+    "source": "ws",
+    "property": [
+      {
+        "id": "workMode",
+        "value": "0",
+        "extend": {
+          "constantPower": 500
+        }
+      }
+    ]
+  }
+}
+```
+
+### Storage Device Information Query
+
+**Entity Type**: Automatic Background Process  
+**Function**: Retrieve device information and automatically set power slider initial value  
+**Protocol**: Send query commands via `/info/get` topic
+
+**Usage**:
+1. Automatically triggered when power control slider loads
+2. Retrieves current work mode and power settings from device
+3. Sets slider to current power value if device is in constant power mode (workMode = "0")
+
+**Query Command Format**:
+```json
+{
+  "topic": "/{device_sn}/info/get",
+  "payload": {
+    "timestamp": 1740448316070,
+    "messageId": "generated_uuid_without_dashes",
+    "source": "ws"
+  }
+}
+```
+
+**Device Response Format**:
+```json
+{
+  "topic": "/{device_sn}/info/post",
+  "payload": {
+    "timestamp": 1740448316070,
+    "messageId": "generated_uuid_without_dashes",
+    "workModeInfo": {
+      "workMode": "0",
+      "extend": {
+        "constantPower": 500
+      }
+    }
+  }
+}
+```
+
+**Logic**:
+- Only when `workMode` is "0" (string), the `constantPower` value is applied to the power slider
+- This ensures the slider shows the correct current power setting when loaded
+- No continuous monitoring - only queries on slider initialization
+
 ## Response Handling
 
 ### Charging Control Response
@@ -258,6 +340,7 @@ eway_charger/
 ├── sensor.py               # Sensor entities
 ├── binary_sensor.py        # Binary sensors
 ├── switch.py               # Switch entities
+├── number.py               # Number entities (power control)
 ├── websocket_client.py     # WebSocket client
 ├── translations/           # Multi-language translations
 │   ├── en.json
@@ -317,6 +400,20 @@ eway_charger/
 - **Dashboard Templates**: Provide energy storage system monitoring card configuration examples
 - **Automation Templates**: Battery management and photovoltaic generation automation examples
 - **Test Validation**: Complete energy storage functionality test suite
+
+#### v0.2.1 - Energy Storage Power Control
+- **Storage Power Control**: Added number entity for controlling energy storage device output power
+- **Slider Interface**: 0-800W power control with intuitive slider interface in Home Assistant
+- **Protocol Implementation**: Complete WebSocket command protocol for power setting
+- **Multi-language Support**: Added Chinese and English translations for power control entity
+- **Documentation Update**: Added detailed usage instructions and command format examples
+
+#### v0.2.2 - Device Information Query
+- **Automatic Device Info Retrieval**: Added background process to query device information on slider load
+- **Smart Initial Value Setting**: Power slider automatically sets to current device power when workMode is "0"
+- **Info Protocol Implementation**: Complete `/info/get` and `/info/post` topic protocol support
+- **Enhanced User Experience**: Slider shows actual device state instead of default zero value
+- **Optimized Data Handling**: Improved device info response processing and workMode validation
 
 ## License
 
