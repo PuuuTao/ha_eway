@@ -21,7 +21,9 @@ class EwayDeviceInfo:
         self.properties = properties or {}
 
         # Extract device_id and device_sn from name, and determine device type
-        self.device_id, self.device_sn, self.device_type = self._parse_device_info_from_name(name)
+        self.device_id, self.device_sn, self.device_type = (
+            self._parse_device_info_from_name(name)
+        )
 
     def _parse_device_info_from_name(self, name: str) -> tuple[str, str, str]:
         """Parse device ID, SN and device type from mDNS service name.
@@ -54,11 +56,14 @@ class EwayDeviceInfo:
                     return device_id.strip(), device_sn.strip(), "charger"
 
                 # Fallback: if no '_', try to extract from properties or use name
-                _LOGGER.warning("Unable to parse device ID and SN from charger name %s, format mismatch", name)
+                _LOGGER.warning(
+                    "Unable to parse device ID and SN from charger name %s, format mismatch",
+                    name,
+                )
                 return "unknown", "unknown", "charger"
 
             # Check if it's an energy storage device
-            elif name_part.startswith("EwayEnergyStorage-"):
+            if name_part.startswith("EwayEnergyStorage-"):
                 # Remove the prefix
                 remaining = name_part[len("EwayEnergyStorage-") :]
 
@@ -66,6 +71,16 @@ class EwayDeviceInfo:
                 device_sn = remaining.strip()
                 # Energy storage devices don't have device_id, only SN
                 return "", device_sn, "energy_storage"
+
+            # Check if it's a CT device
+            if name_part.startswith("EwayCT-"):
+                # Remove the prefix
+                remaining = name_part[len("EwayCT-") :]
+
+                # For CT, the remaining part is the SN
+                device_sn = remaining.strip()
+                # CT devices don't have device_id, only SN
+                return "", device_sn, "ct"
 
             _LOGGER.warning("Device name %s does not start with expected prefix", name)
             return "unknown", "unknown", "unknown"  # noqa: TRY300

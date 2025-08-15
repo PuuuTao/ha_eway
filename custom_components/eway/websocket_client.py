@@ -81,16 +81,21 @@ class EwayWebSocketClient:
             # Automatically request device info and status after successful connection
             try:
                 if self._device_id and self._device_sn:
-                    _LOGGER.info("Automatically requesting device info and status after connection")
+                    _LOGGER.info(
+                        "Automatically requesting device info and status after connection"
+                    )
                     await self.get_device_info()
                     await self.get_device_status()
                 else:
-                    _LOGGER.warning("Cannot request device info: device_id=%s, device_sn=%s",
-                                  self._device_id, self._device_sn)
-            except Exception as exc:
+                    _LOGGER.warning(
+                        "Cannot request device info: device_id=%s, device_sn=%s",
+                        self._device_id,
+                        self._device_sn,
+                    )
+            except (ConnectionError, ValueError, OSError, TimeoutError) as exc:
                 _LOGGER.warning("Failed to request initial device data: %s", exc)
 
-        except Exception as exc:
+        except (ConnectionError, OSError, TimeoutError, WebSocketException) as exc:
             _LOGGER.error("Failed to connect to %s, %s", self.uri, exc)
             self._connected = False
             raise
@@ -123,7 +128,7 @@ class EwayWebSocketClient:
             message_str = json.dumps(message)
             await self._websocket.send(message_str)
             _LOGGER.debug("Sent message: %s", message_str)
-        except Exception as exc:
+        except (ConnectionError, OSError, WebSocketException, json.JSONEncodeError) as exc:
             _LOGGER.error("Failed to send message: %s", exc)
             raise
 

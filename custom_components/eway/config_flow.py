@@ -2,15 +2,13 @@
 
 from __future__ import annotations
 
-import asyncio
+from collections import OrderedDict
 import logging
 from typing import Any
 
 import voluptuous as vol
-from collections import OrderedDict
 
 from homeassistant import config_entries
-from homeassistant.components import zeroconf
 from homeassistant.config_entries import ConfigEntry, OptionsFlow
 from homeassistant.const import CONF_HOST, CONF_PORT
 from homeassistant.core import HomeAssistant, callback
@@ -19,8 +17,9 @@ from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .binary_sensor import BINARY_SENSOR_CONFIGS
-from .const import CONF_DEVICE_ID, CONF_DEVICE_SN, DEFAULT_PORT, DOMAIN
-from .sensor import SENSOR_CONFIGS
+from .const import CONF_DEVICE_ID, CONF_DEVICE_SN, DOMAIN
+from .ct_coordinator import EwayCTCoordinator
+from .sensor import SENSOR_CONFIGS, STORAGE_SENSOR_CONFIGS
 from .websocket_client import EwayWebSocketClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,7 +37,16 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
 STEP_ENERGY_STORAGE_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
-        vol.Required(CONF_DEVICE_SN): str,  # Energy storage only needs SN, port is fixed to 80
+        vol.Required(
+            CONF_DEVICE_SN
+        ): str,  # Energy storage only needs SN, port is fixed to 80
+    }
+)
+
+STEP_CT_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_HOST): str,
+        vol.Optional(CONF_DEVICE_SN, default=""): str,  # CT device SN is optional
     }
 )
 
@@ -50,6 +58,7 @@ STEP_DISCOVERY_DATA_SCHEMA = vol.Schema(
     }
 )
 
+
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
     """Validate the user input allows us to connect.
 
@@ -59,14 +68,14 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
         host=data[CONF_HOST],
         port=data[CONF_PORT],
         device_id=data.get(CONF_DEVICE_ID, ""),
-        device_sn=data.get(CONF_DEVICE_SN, "")
+        device_sn=data.get(CONF_DEVICE_SN, ""),
     )
 
     try:
         # Test connection
         await client.connect()
         await client.disconnect()
-    except Exception as exc:
+    except (ConnectionError, OSError, TimeoutError) as exc:
         _LOGGER.error("Failed to connect to Eway Charger: %s", exc)
         raise CannotConnect from exc
 
@@ -74,7 +83,9 @@ async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str,
     return {"title": f"Eway Charger ({data[CONF_HOST]})"}
 
 
-async def validate_energy_storage_input(hass: HomeAssistant, data: dict[str, Any]) -> dict[str, Any]:
+async def validate_energy_storage_input(
+    hass: HomeAssistant, data: dict[str, Any]
+) -> dict[str, Any]:
     """Validate the energy storage input allows us to connect.
 
     Data has the keys from STEP_ENERGY_STORAGE_DATA_SCHEMA with values provided by the user.
@@ -83,19 +94,46 @@ async def validate_energy_storage_input(hass: HomeAssistant, data: dict[str, Any
         host=data[CONF_HOST],
         port=80,  # Energy storage devices use fixed port 80
         device_id="",  # Energy storage devices don't have device_id
-        device_sn=data[CONF_DEVICE_SN]
+        device_sn=data[CONF_DEVICE_SN],
     )
 
     try:
         # Test connection
         await client.connect()
         await client.disconnect()
-    except Exception as exc:
+    except (ConnectionError, OSError, TimeoutError) as exc:
         _LOGGER.error("Failed to connect to Eway Energy Storage: %s", exc)
         raise CannotConnect from exc
 
     # Return info that you want to store in the config entry.
     return {"title": f"Eway Energy Storage ({data[CONF_HOST]})"}
+
+
+async def validate_ct_input(
+    hass: HomeAssistant, data: dict[str, Any]
+) -> dict[str, Any]:
+    """Validate the CT device input allows us to connect.
+
+    Data has the keys from STEP_CT_DATA_SCHEMA with values provided by the user.
+    """
+    coordinator = EwayCTCoordinator(
+        hass=hass,
+        host=data[CONF_HOST],
+        device_sn=data.get(CONF_DEVICE_SN, ""),
+    )
+
+    try:
+        # Test connection
+        if not await coordinator.test_connection():
+            raise CannotConnect("Failed to connect to CT device")
+    except Exception as exc:
+        _LOGGER.error("Failed to connect to Eway CT Device: %s", exc)
+        raise CannotConnect from exc
+    finally:
+        await coordinator.async_shutdown()
+
+    # Return info that you want to store in the config entry.
+    return {"title": f"Eway CT Device ({data[CONF_HOST]})"}
 
 
 class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -118,22 +156,29 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: ZeroconfServiceInfo
     ) -> config_entries.ConfigFlowResult:
         """Handle zeroconf discovery."""
-        _LOGGER.warning("🎯 ZEROCONF method called! Discovered device: %s", discovery_info)
+        _LOGGER.warning(
+            "🎯 ZEROCONF method called! Discovered device: %s", discovery_info
+        )
         # Extract device information from discovery_info
         host = discovery_info.host
         port = discovery_info.port
         name = discovery_info.name
         props = discovery_info.properties  # Note: this is a bytes-to-str dict
 
-        _LOGGER.debug("Zeroconf discovery: host=%s, port=%s, name=%s, props=%s",
-                  host, port, name, props)
+        _LOGGER.debug(
+            "Zeroconf discovery: host=%s, port=%s, name=%s, props=%s",
+            host,
+            port,
+            name,
+            props,
+        )
 
         if not host or not name:
             _LOGGER.warning("❌ Zeroconf discovery info incomplete: %s", discovery_info)
             return self.async_abort(reason="incomplete_discovery_info")
 
         # Check if it's an Eway device (charger or energy storage)
-        if not (name.startswith("EwayCS-TFT") or name.startswith("EwayEnergyStorage")):
+        if not name.startswith(("EwayCS-TFT", "EwayEnergyStorage", "EwayCT")):
             _LOGGER.warning("Skipping non-Eway device: %s", name)
             return self.async_abort(reason="not_eway_device")
 
@@ -151,7 +196,7 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if name_part.startswith("EwayCS-TFT-"):
                 # Charger device: EwayCS-TFT-{device_id}_{device_sn}
-                remaining = name_part[len("EwayCS-TFT-"):]
+                remaining = name_part[len("EwayCS-TFT-") :]
                 if "_" in remaining:
                     device_id, device_sn = remaining.split("_", 1)
                     device_id = device_id.strip()
@@ -159,11 +204,17 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 device_type = "charger"
             elif name_part.startswith("EwayEnergyStorage-"):
                 # Energy storage device: EwayEnergyStorage-{sn}
-                remaining = name_part[len("EwayEnergyStorage-"):]
+                remaining = name_part[len("EwayEnergyStorage-") :]
                 device_sn = remaining.strip()
                 device_id = ""  # Energy storage devices don't have device_id
                 device_type = "energy_storage"
-        except Exception as exc:
+            elif name_part.startswith("EwayCT-"):
+                # CT device: EwayCT-{sn}
+                remaining = name_part[len("EwayCT-") :]
+                device_sn = remaining.strip()
+                device_id = ""  # CT devices don't have device_id
+                device_type = "ct"
+        except (ValueError, AttributeError, IndexError) as exc:
             _LOGGER.warning("Failed to parse device name: %s", exc)
 
         # Create unique identifier for duplicate checking
@@ -171,9 +222,7 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Check if this device is already configured
         await self.async_set_unique_id(unique_id)
-        self._abort_if_unique_id_configured(
-            updates={CONF_HOST: host, CONF_PORT: port}
-        )
+        self._abort_if_unique_id_configured(updates={CONF_HOST: host, CONF_PORT: port})
 
         # Store discovery information
         self._discovery_info = {
@@ -192,24 +241,34 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "port": port,
         }
 
-        _LOGGER.warning("✅ Discovered Eway device (%s): %s (%s:%d)", device_type, name, host, port)
+        _LOGGER.warning(
+            "✅ Discovered Eway device (%s): %s (%s:%d)", device_type, name, host, port
+        )
 
         # Filter duplicate devices (same host)
-        if any(dev["host"] == host and dev["port"] == port for dev in DISCOVERED_DEVICES):
+        if any(
+            dev["host"] == host and dev["port"] == port for dev in DISCOVERED_DEVICES
+        ):
             return self.async_abort(reason="already_discovered")
 
-        _LOGGER.info("✅ Discovered device, showing in Home Assistant Discovered: %s", name)
+        _LOGGER.info(
+            "✅ Discovered device, showing in Home Assistant Discovered: %s", name
+        )
 
         # Save device information to cache for manual selection option
-        if not any(dev["host"] == host and dev["port"] == port for dev in DISCOVERED_DEVICES):
-            DISCOVERED_DEVICES.append({
-                "host": host,
-                "port": port,
-                "name": name,
-                "device_id": device_id,
-                "device_sn": device_sn,
-                "device_type": device_type,
-            })
+        if not any(
+            dev["host"] == host and dev["port"] == port for dev in DISCOVERED_DEVICES
+        ):
+            DISCOVERED_DEVICES.append(
+                {
+                    "host": host,
+                    "port": port,
+                    "name": name,
+                    "device_id": device_id,
+                    "device_sn": device_sn,
+                    "device_type": device_type,
+                }
+            )
 
         # Show the device in Home Assistant's Discovered page
         return await self.async_step_zeroconf_confirm()
@@ -219,22 +278,28 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     ) -> config_entries.ConfigFlowResult:
         """Handle a confirmation flow initiated by zeroconf."""
         device_type = self._discovery_info.get("device_type", "unknown")
-        _LOGGER.warning("✅ Discovered Eway %s device, proceeding to next step", device_type)
+        _LOGGER.warning(
+            "✅ Discovered Eway %s device, proceeding to next step", device_type
+        )
         if user_input is not None:
             # User confirmed adding device
             # Use different ports based on device type
             if self._discovery_info["device_type"] == "energy_storage":
                 port = 80  # Energy storage devices use port 80
+            elif self._discovery_info["device_type"] == "ct":
+                port = 80  # CT devices use port 80
             else:
                 port = 8888  # Charger devices use port 8888
             # Prepare config data based on device type
-            if self._discovery_info["device_type"] == "energy_storage":
-                # Energy storage devices don't use device ID
+            if self._discovery_info["device_type"] in ["energy_storage", "ct"]:
+                # Energy storage and CT devices don't use device ID
                 config_data = {
                     CONF_HOST: self._discovery_info["host"],
                     CONF_PORT: port,
-                    CONF_DEVICE_ID: "",  # Energy storage devices don't have device ID
-                    CONF_DEVICE_SN: user_input.get(CONF_DEVICE_SN, self._discovery_info["device_sn"]),
+                    CONF_DEVICE_ID: "",  # These devices don't have device ID
+                    CONF_DEVICE_SN: user_input.get(
+                        CONF_DEVICE_SN, self._discovery_info["device_sn"]
+                    ),
                     "device_type": self._discovery_info["device_type"],
                     "auto_discover": True,
                 }
@@ -243,8 +308,12 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 config_data = {
                     CONF_HOST: self._discovery_info["host"],
                     CONF_PORT: port,
-                    CONF_DEVICE_ID: user_input.get(CONF_DEVICE_ID, self._discovery_info["device_id"]),
-                    CONF_DEVICE_SN: user_input.get(CONF_DEVICE_SN, self._discovery_info["device_sn"]),
+                    CONF_DEVICE_ID: user_input.get(
+                        CONF_DEVICE_ID, self._discovery_info["device_id"]
+                    ),
+                    CONF_DEVICE_SN: user_input.get(
+                        CONF_DEVICE_SN, self._discovery_info["device_sn"]
+                    ),
                     "device_type": self._discovery_info["device_type"],
                     "auto_discover": True,
                 }
@@ -252,44 +321,56 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             try:
                 # Validate connection based on device type
                 if self._discovery_info["device_type"] == "energy_storage":
-                    info = await validate_energy_storage_input(self.hass, config_data)
+                    _ = await validate_energy_storage_input(self.hass, config_data)
+                elif self._discovery_info["device_type"] == "ct":
+                    _ = await validate_ct_input(self.hass, config_data)
                 else:
-                    info = await validate_input(self.hass, config_data)
+                    _ = await validate_input(self.hass, config_data)
                 _LOGGER.warning("✅ Zeroconf device validation successful")
 
-                device_type_name = "Charger" if self._discovery_info["device_type"] == "charger" else "Energy Storage"
+                device_type_name = (
+                    "Charger"
+                    if self._discovery_info["device_type"] == "charger"
+                    else "Energy Storage" if self._discovery_info["device_type"] == "energy_storage" else "CT"
+                )
                 return self.async_create_entry(
                     title=f"Eway {device_type_name} ({self._discovery_info['name']})",
-                    data=config_data
+                    data=config_data,
                 )
             except CannotConnect:
                 _LOGGER.warning("❌ Cannot connect to Zeroconf discovered device")
                 return self.async_abort(reason="cannot_connect")
-            except Exception as exc:
-                _LOGGER.exception("❌ Exception occurred while validating Zeroconf device: %s", exc)
+            except Exception:
+                _LOGGER.exception(
+                    "❌ Exception occurred while validating Zeroconf device"
+                )
                 return self.async_abort(reason="unknown")
 
         # Show confirmation form - different schema based on device type
-        if self._discovery_info["device_type"] == "energy_storage":
-            # Energy storage devices don't need device ID
-            discovery_schema = vol.Schema({
-                vol.Optional(
-                    CONF_DEVICE_SN,
-                    default=self._discovery_info.get("device_sn", "")
-                ): str,
-            })
+        if self._discovery_info["device_type"] in ["energy_storage", "ct"]:
+            # Energy storage and CT devices don't need device ID
+            discovery_schema = vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_DEVICE_SN,
+                        default=self._discovery_info.get("device_sn", ""),
+                    ): str,
+                }
+            )
         else:
             # Charger devices need both device ID and SN
-            discovery_schema = vol.Schema({
-                vol.Optional(
-                    CONF_DEVICE_ID,
-                    default=self._discovery_info.get("device_id", "")
-                ): str,
-                vol.Optional(
-                    CONF_DEVICE_SN,
-                    default=self._discovery_info.get("device_sn", "")
-                ): str,
-            })
+            discovery_schema = vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_DEVICE_ID,
+                        default=self._discovery_info.get("device_id", ""),
+                    ): str,
+                    vol.Optional(
+                        CONF_DEVICE_SN,
+                        default=self._discovery_info.get("device_sn", ""),
+                    ): str,
+                }
+            )
 
         return self.async_show_form(
             step_id="zeroconf_confirm",
@@ -308,13 +389,17 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             if user_input["device_type"] == "charger":
                 return await self.async_step_charger()
-            elif user_input["device_type"] == "energy_storage":
+            if user_input["device_type"] == "energy_storage":
                 return await self.async_step_energy_storage()
+            if user_input["device_type"] == "ct":
+                return await self.async_step_ct()
 
         # Show device type selection form
-        device_type_schema = vol.Schema({
-            vol.Required("device_type"): vol.In(["charger", "energy_storage"]),
-        })
+        device_type_schema = vol.Schema(
+            {
+                vol.Required("device_type"): vol.In(["charger", "energy_storage", "ct"]),
+            }
+        )
 
         return self.async_show_form(
             step_id="user",
@@ -331,7 +416,7 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if config_method == "manual":
                 return await self.async_step_manual()
-            elif config_method == "discovered":
+            if config_method == "discovered":
                 return await self.async_step_discovery()
 
         # Prepare configuration method options
@@ -340,9 +425,11 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             config_method_options.append("discovered")
 
         # Build form schema
-        data_schema = vol.Schema({
-            vol.Required("config_method"): vol.In(config_method_options),
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required("config_method"): vol.In(config_method_options),
+            }
+        )
 
         return self.async_show_form(
             step_id="charger",
@@ -367,7 +454,9 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="device_not_found")
 
         # Filter devices based on current context (charger only)
-        charger_devices = [dev for dev in DISCOVERED_DEVICES if dev.get('device_type') == 'charger']
+        charger_devices = [
+            dev for dev in DISCOVERED_DEVICES if dev.get("device_type") == "charger"
+        ]
 
         # Check if there are discovered charger devices
         if not charger_devices:
@@ -380,12 +469,12 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             key = f"{dev['host']}:{dev['port']}"
 
             # Extract the main part of device name
-            device_name = dev['name']
+            device_name = dev["name"]
             if "._http._tcp.local." in device_name:
                 device_name = device_name.replace("._http._tcp.local.", "")
 
             # Determine device type and format display name
-            device_type = dev.get('device_type', 'unknown')
+            device_type = dev.get("device_type", "unknown")
             if device_type == "charger":
                 # For charger: show the part before first underscore
                 if "_" in device_name:
@@ -403,9 +492,11 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             discovered_device_options[key] = label
 
         # Build form schema
-        data_schema = vol.Schema({
-            vol.Required("discovered_device"): vol.In(discovered_device_options),
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required("discovered_device"): vol.In(discovered_device_options),
+            }
+        )
 
         return self.async_show_form(
             step_id="discovery",
@@ -422,23 +513,65 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             if config_method == "manual":
                 return await self.async_step_manual_energy_storage()
-            elif config_method == "discovered":
+            if config_method == "discovered":
                 return await self.async_step_discovery_energy_storage()
 
         # Prepare configuration method options
         config_method_options = ["manual"]
         # Check if there are any discovered energy storage devices
-        energy_storage_devices = [dev for dev in DISCOVERED_DEVICES if dev.get('device_type') == 'energy_storage']
+        energy_storage_devices = [
+            dev
+            for dev in DISCOVERED_DEVICES
+            if dev.get("device_type") == "energy_storage"
+        ]
         if energy_storage_devices:
             config_method_options.append("discovered")
 
         # Build form schema
-        data_schema = vol.Schema({
-            vol.Required("config_method"): vol.In(config_method_options),
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required("config_method"): vol.In(config_method_options),
+            }
+        )
 
         return self.async_show_form(
             step_id="energy_storage",
+            data_schema=data_schema,
+            description_placeholders={},
+        )
+
+    async def async_step_ct(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle CT configuration step - choose configuration method."""
+        if user_input is not None:
+            config_method = user_input.get("config_method", "")
+
+            if config_method == "manual":
+                return await self.async_step_manual_ct()
+            if config_method == "discovered":
+                return await self.async_step_discovery_ct()
+
+        # Prepare configuration method options
+        config_method_options = ["manual"]
+        # Check if there are any discovered CT devices
+        ct_devices = [
+            dev
+            for dev in DISCOVERED_DEVICES
+            if dev.get("device_type") == "ct"
+        ]
+        if ct_devices:
+            config_method_options.append("discovered")
+
+        # Build form schema
+        data_schema = vol.Schema(
+            {
+                vol.Required("config_method"): vol.In(config_method_options),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="ct",
             data_schema=data_schema,
             description_placeholders={},
         )
@@ -471,7 +604,9 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Inform user to power on device and wait for discovery."""
         return self.async_show_form(
             step_id="wait_for_discovery",
-            description_placeholders={"info": "Please power on your device. It will appear automatically when discovered on the network."},
+            description_placeholders={
+                "info": "Please power on your device. It will appear automatically when discovered on the network."
+            },
         )
 
     async def async_step_manual(
@@ -521,7 +656,36 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_create_entry(title=info["title"], data=user_input)
 
         return self.async_show_form(
-            step_id="manual_energy_storage", data_schema=STEP_ENERGY_STORAGE_DATA_SCHEMA, errors=errors
+            step_id="manual_energy_storage",
+            data_schema=STEP_ENERGY_STORAGE_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_manual_ct(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle manual CT configuration."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                # Add device_type and device_id to the data
+                user_input["device_type"] = "ct"
+                user_input[CONF_DEVICE_ID] = ""  # CT devices don't have device_id
+                info = await validate_ct_input(self.hass, user_input)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                return self.async_create_entry(title=info["title"], data=user_input)
+
+        return self.async_show_form(
+            step_id="manual_ct",
+            data_schema=STEP_CT_DATA_SCHEMA,
+            errors=errors,
         )
 
     async def async_step_discovery_energy_storage(
@@ -541,7 +705,11 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="device_not_found")
 
         # Filter devices based on current context (energy storage only)
-        storage_devices = [dev for dev in DISCOVERED_DEVICES if dev.get('device_type') == 'energy_storage']
+        storage_devices = [
+            dev
+            for dev in DISCOVERED_DEVICES
+            if dev.get("device_type") == "energy_storage"
+        ]
 
         # Check if there are discovered storage devices
         if not storage_devices:
@@ -554,7 +722,7 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             key = f"{dev['host']}:{dev['port']}"
 
             # Extract the main part of device name
-            device_name = dev['name']
+            device_name = dev["name"]
             if "._http._tcp.local." in device_name:
                 device_name = device_name.replace("._http._tcp.local.", "")
 
@@ -564,15 +732,74 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             discovered_device_options[key] = label
 
         # Build form schema
-        data_schema = vol.Schema({
-            vol.Required("discovered_device"): vol.In(discovered_device_options),
-        })
+        data_schema = vol.Schema(
+            {
+                vol.Required("discovered_device"): vol.In(discovered_device_options),
+            }
+        )
 
         return self.async_show_form(
             step_id="discovery_energy_storage",
             data_schema=data_schema,
             description_placeholders={},
         )
+
+    async def async_step_discovery_ct(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle discovered CT devices selection."""
+        if user_input is not None:
+            selected_device = user_input.get("discovered_device", "")
+
+            # Find the selected device
+            for dev in DISCOVERED_DEVICES:
+                key = f"{dev['host']}:{dev['port']}"
+                if selected_device == key:
+                    self._discovery_info = dev
+                    return await self.async_step_zeroconf_confirm()
+
+            return self.async_abort(reason="device_not_found")
+
+        # Filter devices based on current context (CT only)
+        ct_devices = [
+            dev
+            for dev in DISCOVERED_DEVICES
+            if dev.get("device_type") == "ct"
+        ]
+
+        # Check if there are discovered CT devices
+        if not ct_devices:
+            return self.async_abort(reason="no_devices_found")
+
+        # Prepare discovered device options (CT only)
+        discovered_device_options = OrderedDict()
+
+        for dev in ct_devices:
+            key = f"{dev['host']}:{dev['port']}"
+
+            # Extract the main part of device name
+            device_name = dev["name"]
+            if "._http._tcp.local." in device_name:
+                device_name = device_name.replace("._http._tcp.local.", "")
+
+            # For CT: show the full name
+            label = f"CT: {device_name}"
+
+            discovered_device_options[key] = label
+
+        # Build form schema
+        data_schema = vol.Schema(
+            {
+                vol.Required("discovered_device"): vol.In(discovered_device_options),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="discovery_ct",
+            data_schema=data_schema,
+            description_placeholders={},
+        )
+
 
 class EwayOptionsFlow(config_entries.OptionsFlow):
     """Handle options flow for Eway Charger."""
@@ -594,11 +821,16 @@ class EwayOptionsFlow(config_entries.OptionsFlow):
         if device_type == "energy_storage":
             # Handle energy storage device options
             return await self._handle_energy_storage_options(user_input)
-        else:
-            # Handle charger device options
-            return await self._handle_charger_options(user_input)
+        elif device_type == "ct":
+            # Handle CT device options (similar to energy storage for now)
+            return await self._handle_energy_storage_options(user_input)
 
-    async def _handle_charger_options(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+        # Handle charger device options
+        return await self._handle_charger_options(user_input)
+
+    async def _handle_charger_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Handle charger device options."""
         # Get current enabled sensors or default to enabled_by_default sensors
         current_enabled = self.config_entry.options.get("enabled_sensors", [])
@@ -647,9 +879,10 @@ class EwayOptionsFlow(config_entries.OptionsFlow):
             description_placeholders={"device_type": "充电桩"},
         )
 
-    async def _handle_energy_storage_options(self, user_input: dict[str, Any] | None = None) -> config_entries.ConfigFlowResult:
+    async def _handle_energy_storage_options(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
         """Handle energy storage device options."""
-        from .sensor import STORAGE_SENSOR_CONFIGS
 
         # Get current enabled storage sensors or default to all sensors
         current_enabled = self.config_entry.options.get("enabled_storage_sensors", [])
@@ -691,4 +924,3 @@ class CannotConnect(HomeAssistantError):
 
 class InvalidAuth(HomeAssistantError):
     """Error to indicate there is invalid auth."""
-

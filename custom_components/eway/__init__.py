@@ -11,14 +11,15 @@ from homeassistant.helpers.typing import ConfigType
 
 from .const import CONF_DEVICE_ID, CONF_DEVICE_SN, CONF_HOST, CONF_PORT, DOMAIN
 from .coordinator import EwayChargerCoordinator
+from .ct_coordinator import EwayCTCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
+    Platform.NUMBER,
     Platform.SENSOR,
     Platform.SWITCH,
-    Platform.NUMBER,
 ]
 
 
@@ -34,7 +35,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     auto_discover = entry.data.get("auto_discover", False)
     device_type = entry.data.get("device_type", "charger")
 
-    if auto_discover:
+    # Initialize coordinator based on device type
+    if device_type == "ct":
+        # Initialize CT coordinator
+        coordinator = EwayCTCoordinator(
+            hass,
+            host=entry.data[CONF_HOST],
+            device_sn=entry.data.get(CONF_DEVICE_SN, ""),
+        )
+    elif auto_discover:
         # Initialize coordinator with auto-discovery enabled
         coordinator = EwayChargerCoordinator(
             hass,
@@ -64,7 +73,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
 
     _LOGGER.warning("🔋 Device type: %s", coordinator.device_type)
-    _LOGGER.warning("🔋 Standard platforms setup completed for device type: %s", coordinator.device_type)
+    _LOGGER.warning(
+        "🔋 Standard platforms setup completed for device type: %s",
+        coordinator.device_type,
+    )
 
     return True
 

@@ -5,19 +5,20 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-_LOGGER = logging.getLogger(__name__)
-
 from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
 from .coordinator import EwayChargerCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 # Binary sensor configurations
 BINARY_SENSOR_CONFIGS = {
@@ -70,7 +71,10 @@ async def async_setup_entry(
 
     # Only set up charger binary sensors for charger devices
     if coordinator.device_type != "charger":
-        _LOGGER.debug("Skipping charger binary sensors for device type: %s", coordinator.device_type)
+        _LOGGER.debug(
+            "Skipping charger binary sensors for device type: %s",
+            coordinator.device_type,
+        )
         return
 
     # Only set up charger binary sensors for charger devices
@@ -120,16 +124,23 @@ class EwayChargerBinarySensorEntity(CoordinatorEntity, BinarySensorEntity):
         self._attr_has_entity_name = True  # Enable entity name
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> DeviceInfo | None:
         """Return device information."""
         # For energy storage devices, use device serial number as identifier if device_id is empty
         # For charger devices, use device_id as usual
-        if self.coordinator.device_type == "energy_storage" and not self.coordinator.device_id:
+        if (
+            self.coordinator.device_type == "energy_storage"
+            and not self.coordinator.device_id
+        ):
             device_identifier = self.coordinator.device_sn or ""
-            device_name = get_device_name(self.coordinator.device_type, self.coordinator.device_sn or "")
+            device_name = get_device_name(
+                self.coordinator.device_type, self.coordinator.device_sn or ""
+            )
         else:
             device_identifier = self.coordinator.device_id
-            device_name = get_device_name(self.coordinator.device_type, self.coordinator.device_id)
+            device_name = get_device_name(
+                self.coordinator.device_type, self.coordinator.device_id
+            )
 
         return {
             "identifiers": {(DOMAIN, device_identifier)},
@@ -156,7 +167,7 @@ class EwayChargerBinarySensorEntity(CoordinatorEntity, BinarySensorEntity):
             # Handle both dict and list payload formats
             if isinstance(payload, dict):
                 return payload.get(key)
-            elif isinstance(payload, list):
+            if isinstance(payload, list):
                 # For list payloads, search through items for the key
                 for item in payload:
                     if isinstance(item, dict) and key in item:

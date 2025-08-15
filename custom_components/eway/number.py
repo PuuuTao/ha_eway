@@ -5,9 +5,10 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from homeassistant.components.number import NumberEntity
+from homeassistant.components.number import NumberEntity, NumberDeviceClass
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -24,10 +25,13 @@ async def async_setup_entry(
 ) -> None:
     """Set up the number platform."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
-    
+
     # Only set up storage power control for energy storage devices
     if coordinator.device_type != "energy_storage":
-        _LOGGER.debug("Skipping storage power control for device type: %s", coordinator.device_type)
+        _LOGGER.debug(
+            "Skipping storage power control for device type: %s",
+            coordinator.device_type,
+        )
         return
 
     entities = [
@@ -51,14 +55,17 @@ class EwayStoragePowerNumber(CoordinatorEntity, NumberEntity):
         self._attr_native_step = 1
         self._attr_native_unit_of_measurement = "W"
         self._attr_mode = "slider"
+        self._attr_device_class = NumberDeviceClass.POWER
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> DeviceInfo | None:
         """Return device information."""
         # For energy storage devices, use device serial number as identifier
         device_identifier = self.coordinator.device_sn or ""
-        device_name = get_device_name(self.coordinator.device_type, self.coordinator.device_sn or "")
-        
+        device_name = get_device_name(
+            self.coordinator.device_type, self.coordinator.device_sn or ""
+        )
+
         return {
             "identifiers": {(DOMAIN, device_identifier)},
             "name": device_name,
@@ -80,7 +87,7 @@ class EwayStoragePowerNumber(CoordinatorEntity, NumberEntity):
         protocol_version = self._get_device_info_value("protocol_version")
         if protocol_version:
             return str(protocol_version)
-        
+
         # Fallback to "Unknown" if no version available
         return "Unknown"
 
@@ -90,38 +97,54 @@ class EwayStoragePowerNumber(CoordinatorEntity, NumberEntity):
         return self.coordinator.connected and super().available
 
     async def async_added_to_hass(self) -> None:
-        """Called when entity is added to hass."""
+        """Call when entity is added to Home Assistant."""
         await super().async_added_to_hass()
 
         # Request device info when the entity is first loaded
         try:
-            _LOGGER.info("Requesting storage device info for power control initialization")
+            _LOGGER.info(
+                "Requesting storage device info for power control initialization"
+            )
             storage_info = await self.coordinator.async_get_storage_info()
 
             if storage_info:
                 work_mode = storage_info.get("workMode")
                 constant_power = storage_info.get("constantPower", 0)
 
-                _LOGGER.info("Retrieved storage info: workMode=%s, constantPower=%s", work_mode, constant_power)
+                _LOGGER.info(
+                    "Retrieved storage info: workMode=%s, constantPower=%s",
+                    work_mode,
+                    constant_power,
+                )
 
                 # Only update the slider if workMode is "0"
                 if work_mode == "0":
-                    _LOGGER.info("WorkMode is '0', setting slider to constantPower value: %s", constant_power)
+                    _LOGGER.info(
+                        "WorkMode is '0', setting slider to constantPower value: %s",
+                        constant_power,
+                    )
                     # Store the value in coordinator data for the slider to read
                     if not self.coordinator.data:
                         self.coordinator.data = {}
                     if "storage_info" not in self.coordinator.data:
                         self.coordinator.data["storage_info"] = {}
 
-                    self.coordinator.data["storage_info"]["constant_power"] = constant_power
+                    self.coordinator.data["storage_info"]["constant_power"] = (
+                        constant_power
+                    )
                     self.coordinator.async_set_updated_data(self.coordinator.data)
                 else:
-                    _LOGGER.info("WorkMode is not '0' (current: %s), keeping slider at default value", work_mode)
+                    _LOGGER.info(
+                        "WorkMode is not '0' (current: %s), keeping slider at default value",
+                        work_mode,
+                    )
             else:
                 _LOGGER.warning("Failed to retrieve storage device info")
 
-        except Exception as exc:
-            _LOGGER.error("Failed to get storage device info during initialization: %s", exc)
+        except (ConnectionError, ValueError, OSError) as exc:
+            _LOGGER.error(
+                "Failed to get storage device info during initialization: %s", exc
+            )
 
     @property
     def native_value(self) -> float | None:
@@ -152,7 +175,11 @@ class EwayStoragePowerNumber(CoordinatorEntity, NumberEntity):
         try:
             power_value = int(value)
             await self.coordinator.async_set_storage_power(power_value)
-            _LOGGER.info("Set storage power to %d W for device %s", power_value, self.coordinator.device_sn)
+            _LOGGER.info(
+                "Set storage power to %d W for device %s",
+                power_value,
+                self.coordinator.device_sn,
+            )
 
             # Update the local value immediately for better UI responsiveness
             if not self.coordinator.data:
@@ -163,6 +190,6 @@ class EwayStoragePowerNumber(CoordinatorEntity, NumberEntity):
             self.coordinator.data["storage_info"]["constant_power"] = power_value
             self.coordinator.async_set_updated_data(self.coordinator.data)
 
-        except Exception as exc:
+        except (ConnectionError, ValueError, OSError) as exc:
             _LOGGER.error("Failed to set storage power: %s", exc)
             raise

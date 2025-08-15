@@ -10,7 +10,8 @@
         "data_description": {
           "device_type": {
             "charger": "🔌 充电桩",
-            "energy_storage": "🔋 储能"
+            "energy_storage": "🔋 储能",
+            "ct": "⚡ CT设备"
           }
         }
       },
@@ -70,6 +71,21 @@
           "port": "端口",
           "device_id": "设备 ID",
           "device_sn": "设备序列号"
+        }
+      },
+      "ct": {
+        "title": "Eway CT设备设置",
+        "description": "配置您的Eway CT设备连接（端口自动设置为80）",
+        "data": {
+          "host": "主机地址",
+          "device_sn": "设备序列号（可选）"
+        }
+      },
+      "discovery_ct": {
+        "title": "选择已发现的CT设备",
+        "description": "选择要连接的CT设备",
+        "data": {
+          "discovered_device": "已发现CT设备"
         }
       },
       "zeroconf_confirm": {
@@ -351,7 +367,31 @@
       },
       "storage_battery_total_discharge": {
         "name": "储能电池总放电量"
-      }
+      },
+      "ct_voltage": {
+        "name": "电压"
+      },
+      "ct_current": {
+        "name": "电流"
+      },
+      "ct_act_power": {
+        "name": "有功功率"
+      },
+      "ct_aprt_power": {
+        "name": "视在功率"
+      },
+      "ct_pf": {
+        "name": "功率因数"
+      },
+      "ct_freq": {
+        "name": "频率"
+      },
+      "ct_errors": {
+            "name": "错误",
+            "state": {
+                "no_errors": "无错误"
+            }
+        }
     },
     "number": {
       "storage_power": {
@@ -399,6 +439,13 @@
         "state": {
           "on": "有错误",
           "off": "正常"
+        }
+      },
+      "anti_backflow": {
+        "name": "防逆流",
+        "state": {
+          "on": "已启用",
+          "off": "已禁用"
         }
       }
     }

@@ -2,13 +2,10 @@
 
 from __future__ import annotations
 
-import logging
-from collections.abc import Mapping
-from datetime import datetime, timezone
+from datetime import datetime
 from decimal import Decimal
+import logging
 from typing import Any
-
-_LOGGER = logging.getLogger(__name__)
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -26,14 +23,85 @@ from homeassistant.const import (
     UnitOfTime,
 )
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
 from .coordinator import EwayChargerCoordinator
+from .ct_coordinator import EwayCTCoordinator
+
+_LOGGER = logging.getLogger(__name__)
 
 # Storage sensor configurations
+# CT sensor configurations
+CT_SENSOR_CONFIGS = {
+    "ct_voltage": {
+        "name": "CT Voltage",
+        "translation_key": "ct_voltage",
+        "icon": "mdi:flash-triangle",
+        "device_class": SensorDeviceClass.VOLTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": UnitOfElectricPotential.VOLT,
+        "enabled_by_default": True,
+    },
+    "ct_current": {
+        "name": "CT Current",
+        "translation_key": "ct_current",
+        "icon": "mdi:current-ac",
+        "device_class": SensorDeviceClass.CURRENT,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": UnitOfElectricCurrent.AMPERE,
+        "enabled_by_default": True,
+    },
+    "ct_act_power": {
+        "name": "CT Active Power",
+        "translation_key": "ct_act_power",
+        "icon": "mdi:flash",
+        "device_class": SensorDeviceClass.POWER,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": UnitOfPower.WATT,
+        "enabled_by_default": True,
+    },
+    "ct_aprt_power": {
+        "name": "CT Apparent Power",
+        "translation_key": "ct_aprt_power",
+        "icon": "mdi:flash-outline",
+        "device_class": SensorDeviceClass.APPARENT_POWER,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": "VA",
+        "enabled_by_default": True,
+    },
+    "ct_pf": {
+        "name": "CT Power Factor",
+        "translation_key": "ct_pf",
+        "icon": "mdi:cosine-wave",
+        "device_class": SensorDeviceClass.POWER_FACTOR,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": None,
+        "enabled_by_default": True,
+    },
+    "ct_freq": {
+        "name": "CT Frequency",
+        "translation_key": "ct_freq",
+        "icon": "mdi:sine-wave",
+        "device_class": SensorDeviceClass.FREQUENCY,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": "Hz",
+        "enabled_by_default": True,
+    },
+    "ct_errors": {
+        "name": "CT Errors",
+        "translation_key": "ct_errors",
+        "icon": "mdi:alert-circle",
+        "device_class": None,
+        "state_class": None,
+        "unit": None,
+        "enabled_by_default": True,
+    },
+}
+
 STORAGE_SENSOR_CONFIGS = {
     "storage_timestamp": {
         "name": "Data Update Time",
@@ -547,7 +615,9 @@ async def async_setup_entry(
 
     # Set up charger sensors for charger devices
     if coordinator.device_type == "charger":
-        _LOGGER.debug("Setting up charger sensors for device type: %s", coordinator.device_type)
+        _LOGGER.debug(
+            "Setting up charger sensors for device type: %s", coordinator.device_type
+        )
 
         # Get user-configured sensor options, use default enabled sensors if not configured
         enabled_sensors = config_entry.options.get("enabled_sensors", [])
@@ -567,10 +637,14 @@ async def async_setup_entry(
 
     # Set up storage sensors for energy storage devices
     elif coordinator.device_type == "energy_storage":
-        _LOGGER.debug("Setting up storage sensors for device type: %s", coordinator.device_type)
+        _LOGGER.debug(
+            "Setting up storage sensors for device type: %s", coordinator.device_type
+        )
 
         # Get enabled storage sensors from config entry options
-        enabled_storage_sensors = config_entry.options.get("enabled_storage_sensors", [])
+        enabled_storage_sensors = config_entry.options.get(
+            "enabled_storage_sensors", []
+        )
         if not enabled_storage_sensors:
             # If not configured, use all storage sensors as default
             enabled_storage_sensors = list(STORAGE_SENSOR_CONFIGS.keys())
@@ -592,13 +666,50 @@ async def async_setup_entry(
         }
 
         for sensor_key in enabled_storage_sensors:
-            if sensor_key in STORAGE_SENSOR_CONFIGS and sensor_key in storage_sensor_classes:
+            if (
+                sensor_key in STORAGE_SENSOR_CONFIGS
+                and sensor_key in storage_sensor_classes
+            ):
                 config = STORAGE_SENSOR_CONFIGS[sensor_key]
                 sensor_class = storage_sensor_classes[sensor_key]
                 entities.append(sensor_class(coordinator, sensor_key, config))
 
+    # Set up CT sensors for CT devices
+    elif coordinator.device_type == "ct":
+        _LOGGER.debug(
+            "Setting up CT sensors for device type: %s", coordinator.device_type
+        )
+
+        # Get enabled CT sensors from config entry options
+        enabled_ct_sensors = config_entry.options.get("enabled_ct_sensors", [])
+        if not enabled_ct_sensors:
+            # If not configured, use all CT sensors as default
+            enabled_ct_sensors = list(CT_SENSOR_CONFIGS.keys())
+
+        # CT sensor class mapping
+        ct_sensor_classes = {
+            "ct_voltage": EwayCTVoltageSensor,
+            "ct_current": EwayCTCurrentSensor,
+            "ct_act_power": EwayCTActivePowerSensor,
+            "ct_aprt_power": EwayCTApparentPowerSensor,
+            "ct_pf": EwayCTPowerFactorSensor,
+            "ct_freq": EwayCTFrequencySensor,
+            "ct_errors": EwayCTErrorsSensor,
+        }
+
+        for sensor_key in enabled_ct_sensors:
+            if (
+                sensor_key in CT_SENSOR_CONFIGS
+                and sensor_key in ct_sensor_classes
+            ):
+                config = CT_SENSOR_CONFIGS[sensor_key]
+                sensor_class = ct_sensor_classes[sensor_key]
+                entities.append(sensor_class(coordinator, sensor_key, config))
+
     else:
-        _LOGGER.debug("Unknown device type: %s, skipping sensor setup", coordinator.device_type)
+        _LOGGER.debug(
+            "Unknown device type: %s, skipping sensor setup", coordinator.device_type
+        )
 
     async_add_entities(entities)
 
@@ -616,7 +727,7 @@ class EwayChargerSensorEntity(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._sensor_key = sensor_key
         self._config = config
-        self._attr_unique_id = f"{coordinator.device_id}_{sensor_key}"
+        self._attr_unique_id = f"{coordinator.device_sn or coordinator.host}_{sensor_key}"
         # self._attr_name = config["name"]  # Only show sensor name, not including DOMAIN and device ID
         self._attr_has_entity_name = True
         self._attr_translation_key = config.get("translation_key")
@@ -629,16 +740,23 @@ class EwayChargerSensorEntity(CoordinatorEntity, SensorEntity):
             self._attr_native_unit_of_measurement = config["unit"]
 
     @property
-    def device_info(self) -> dict[str, Any]:
+    def device_info(self) -> DeviceInfo | None:
         """Return device information."""
         # For energy storage devices, use device serial number as identifier if device_id is empty
         # For charger devices, use device_id as usual
-        if self.coordinator.device_type == "energy_storage" and not self.coordinator.device_id:
+        if (
+            self.coordinator.device_type == "energy_storage"
+            and not self.coordinator.device_id
+        ):
             device_identifier = self.coordinator.device_sn or ""
-            device_name = get_device_name(self.coordinator.device_type, self.coordinator.device_sn or "")
+            device_name = get_device_name(
+                self.coordinator.device_type, self.coordinator.device_sn or ""
+            )
         else:
             device_identifier = self.coordinator.device_id
-            device_name = get_device_name(self.coordinator.device_type, self.coordinator.device_id)
+            device_name = get_device_name(
+                self.coordinator.device_type, self.coordinator.device_id
+            )
 
         return {
             "identifiers": {(DOMAIN, device_identifier)},
@@ -871,6 +989,203 @@ class EwayDeviceStatusSensor(EwayChargerSensorEntity):
                 if status is not None
                 else None
             )
+            return None
+
+
+# CT Sensor Entity Classes
+class EwayCTSensorEntity(CoordinatorEntity, SensorEntity):
+    """Base class for CT sensor entities."""
+
+    def __init__(
+        self,
+        coordinator: EwayCTCoordinator,
+        sensor_key: str,
+        config: dict[str, Any],
+    ) -> None:
+        """Initialize the CT sensor entity."""
+        super().__init__(coordinator)
+        self._sensor_key = sensor_key
+        self._config = config
+        self._attr_translation_key = config["translation_key"]
+        self._attr_icon = config["icon"]
+        self._attr_device_class = config["device_class"]
+        self._attr_state_class = config["state_class"]
+        self._attr_native_unit_of_measurement = config["unit"]
+        self._attr_entity_registry_enabled_default = config["enabled_by_default"]
+        self._attr_unique_id = f"{coordinator.device_sn}_{sensor_key}"
+        self._attr_has_entity_name = True
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device information."""
+        device_identifier = self.coordinator.device_sn or self.coordinator.host
+        if not device_identifier:
+            return None
+
+        return DeviceInfo(
+            identifiers={(DOMAIN, device_identifier)},
+            name=get_device_name(self.coordinator.device_type, device_identifier),
+            manufacturer=MANUFACTURER,
+            model=get_device_model(self.coordinator.device_type),
+            sw_version=None,
+            hw_version=None,
+            configuration_url=f"http://{self.coordinator.host}",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.coordinator.last_update_success and self.coordinator.data is not None
+
+    def _get_ct_data_value(self, key: str) -> Any:
+        """Get value from CT data."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get(key)
+
+
+class EwayCTVoltageSensor(EwayCTSensorEntity):
+    """CT voltage sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the voltage value."""
+        voltage = self._get_ct_data_value("ct_voltage")
+        if voltage is not None:
+            try:
+                return float(voltage)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert voltage %s to float", voltage)
+        return None
+
+
+class EwayCTCurrentSensor(EwayCTSensorEntity):
+    """CT current sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 3
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current value."""
+        current = self._get_ct_data_value("ct_current")
+        if current is not None:
+            try:
+                return float(current)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert current %s to float", current)
+        return None
+
+
+class EwayCTActivePowerSensor(EwayCTSensorEntity):
+    """CT active power sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the active power value."""
+        act_power = self._get_ct_data_value("ct_act_power")
+        if act_power is not None:
+            try:
+                return float(act_power)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert act_power %s to float", act_power)
+        return None
+
+
+class EwayCTApparentPowerSensor(EwayCTSensorEntity):
+    """CT apparent power sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the apparent power value."""
+        aprt_power = self._get_ct_data_value("ct_aprt_power")
+        if aprt_power is not None:
+            try:
+                return float(aprt_power)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert aprt_power %s to float", aprt_power)
+        return None
+
+
+class EwayCTPowerFactorSensor(EwayCTSensorEntity):
+    """CT power factor sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 3
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the power factor value."""
+        pf = self._get_ct_data_value("ct_pf")
+        if pf is not None:
+            try:
+                return float(pf)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert pf %s to float", pf)
+        return None
+
+
+class EwayCTFrequencySensor(EwayCTSensorEntity):
+    """CT frequency sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the frequency value."""
+        freq = self._get_ct_data_value("ct_freq")
+        if freq is not None:
+            try:
+                return float(freq)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert freq %s to float", freq)
+        return None
+
+
+class EwayCTErrorsSensor(EwayCTSensorEntity):
+    """CT errors sensor."""
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the errors value."""
+        errors = self._get_ct_data_value("ct_errors")
+        if errors is not None:
+            if isinstance(errors, list):
+                return ", ".join(errors) if errors else "no_errors"
+            return str(errors)
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        errors = self._get_ct_data_value("ct_errors")
+        if errors is not None and isinstance(errors, list):
+            return {
+                "error_count": len(errors),
+                "error_list": errors,
+            }
         return None
 
 
@@ -909,7 +1224,10 @@ class EwayRealtimeDataSensor(EwayChargerSensorEntity):
         if data_key:
             value = self._get_realtime_data_value(data_key)
             # Handle special values: signal strength -1 means unavailable
-            if self._sensor_key in ["realtime_imt4g_rssi", "realtime_wifi_rssi"] and value == -1:
+            if (
+                self._sensor_key in ["realtime_imt4g_rssi", "realtime_wifi_rssi"]
+                and value == -1
+            ):
                 return None
             return value
         return None
@@ -926,10 +1244,10 @@ class EwayTimeZoneSensor(EwayChargerSensorEntity):
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
         """Return extra state attributes."""
-        timezone = self._get_device_info_value("timeZone")
-        if timezone is not None:
+        tz_value = self._get_device_info_value("timeZone")
+        if tz_value is not None:
             # Convert to standard timezone format (timezone - 100)
-            offset = timezone - 100
+            offset = tz_value - 100
             return {
                 "timezone_offset": offset,
                 "timezone_description": f"UTC{'+' if offset >= 0 else ''}{offset}",
@@ -961,12 +1279,12 @@ class EwayChargingSessionSensor(EwayChargerSensorEntity):
         if self._sensor_key == "last_charging_start_time":
             timestamp = charging_session.get("start_time")
             if timestamp:
-                return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                return datetime.fromtimestamp(timestamp / 1000, tz=datetime.UTC)
             return None
         if self._sensor_key == "last_charging_end_time":
             timestamp = charging_session.get("end_time")
             if timestamp:
-                return datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
+                return datetime.fromtimestamp(timestamp / 1000, tz=datetime.UTC)
             return None
         if self._sensor_key == "last_charging_stop_reason":
             stop_reason = charging_session.get("stop_reason") or "Normal"
@@ -1018,8 +1336,7 @@ class EwayDeviceErrorResponseSensor(EwayChargerSensorEntity):
         # Return error code count
         if error_codes:
             return f"{len(error_codes)}_errors"
-        else:
-            return "no_errors"
+        return "no_errors"
 
     @property
     def extra_state_attributes(self) -> dict[str, Any] | None:
@@ -1094,10 +1411,17 @@ class EwayDeviceStatusResponsesSensor(EwayChargerSensorEntity):
         # Build status change details
         status_details = {}
         status_mapping = {
-            "gun-status": {"name": "gun_status", "values": {"0": "disconnected", "1": "connected"}},
+            "gun-status": {
+                "name": "gun_status",
+                "values": {"0": "disconnected", "1": "connected"},
+            },
             "charge-status": {
                 "name": "charge_status",
-                "values": {"0": "not_charging", "1": "charging", "2": "charge_complete"},
+                "values": {
+                    "0": "not_charging",
+                    "1": "charging",
+                    "2": "charge_complete",
+                },
             },
             "pile-status": {
                 "name": "pile_status",
@@ -1166,7 +1490,9 @@ class EwayStorageSensorEntity(EwayChargerSensorEntity):
     def _get_storage_data_value(self, key: str) -> Any:
         """Get value from storage data."""
         if not self.coordinator.data or "storage_mini" not in self.coordinator.data:
-            _LOGGER.debug("Getting storage data for key %s: No storage data available", key)
+            _LOGGER.debug(
+                "Getting storage data for key %s: No storage data available", key
+            )
             return None
 
         storage_data = self.coordinator.data["storage_mini"]
@@ -1185,12 +1511,15 @@ class EwayStorageTimestampSensor(EwayStorageSensorEntity):
         if timestamp:
             try:
                 # Convert timestamp to datetime
-                dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
-                _LOGGER.debug("Storage timestamp sensor value: %s (from %s)", dt, timestamp)
-                return dt
+                dt = datetime.fromtimestamp(timestamp / 1000, tz=datetime.UTC)
+                _LOGGER.debug(
+                    "Storage timestamp sensor value: %s (from %s)", dt, timestamp
+                )
             except (ValueError, TypeError) as e:
                 _LOGGER.warning("Failed to convert timestamp %s: %s", timestamp, e)
                 return None
+            else:
+                return dt
         return None
 
 
@@ -1220,11 +1549,18 @@ class EwayStorageOutputPowerSensor(EwayStorageSensorEntity):
         if power is not None:
             try:
                 power_value = float(power)
-                _LOGGER.debug("Storage output power sensor value: %s W (from %s)", power_value, power)
-                return power_value
+                _LOGGER.debug(
+                    "Storage output power sensor value: %s W (from %s)",
+                    power_value,
+                    power,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert output power %s to float: %s", power, e)
+                _LOGGER.warning(
+                    "Failed to convert output power %s to float: %s", power, e
+                )
                 return None
+            else:
+                return power_value
         return None
 
 
@@ -1243,11 +1579,18 @@ class EwayStoragePvPowerSensor(EwayStorageSensorEntity):
         if pv_power is not None:
             try:
                 pv_power_value = float(pv_power)
-                _LOGGER.debug("Storage PV power sensor value: %s W (from %s)", pv_power_value, pv_power)
-                return pv_power_value
+                _LOGGER.debug(
+                    "Storage PV power sensor value: %s W (from %s)",
+                    pv_power_value,
+                    pv_power,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert PV power %s to float: %s", pv_power, e)
+                _LOGGER.warning(
+                    "Failed to convert PV power %s to float: %s", pv_power, e
+                )
                 return None
+            else:
+                return pv_power_value
         return None
 
 
@@ -1266,11 +1609,18 @@ class EwayStorageBatteryPowerSensor(EwayStorageSensorEntity):
         if battery_power is not None:
             try:
                 battery_power_value = float(battery_power)
-                _LOGGER.debug("Storage battery power sensor value: %s W (from %s)", battery_power_value, battery_power)
-                return battery_power_value
+                _LOGGER.debug(
+                    "Storage battery power sensor value: %s W (from %s)",
+                    battery_power_value,
+                    battery_power,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert battery power %s to float: %s", battery_power, e)
+                _LOGGER.warning(
+                    "Failed to convert battery power %s to float: %s", battery_power, e
+                )
                 return None
+            else:
+                return battery_power_value
         return None
 
 
@@ -1284,12 +1634,25 @@ class EwayStorageBatterySocSensor(EwayStorageSensorEntity):
         if soc is not None:
             try:
                 soc_value = float(soc)
-                _LOGGER.debug("Storage battery SOC sensor value: %s%% (from %s)", soc_value, soc)
-                return soc_value
+                _LOGGER.debug(
+                    "Storage battery SOC sensor value: %s%% (from %s)", soc_value, soc
+                )
             except (ValueError, TypeError) as e:
                 _LOGGER.warning("Failed to convert battery SOC %s to float: %s", soc, e)
                 return None
+            else:
+                return soc_value
         return None
+
+    @property
+    def icon(self) -> str | None:
+        """Return the icon based on SOC level."""
+        soc = self.native_value
+        if soc is None:
+            return "mdi:battery-unknown"
+        if soc == 100:
+            return "mdi:battery"
+        return f"mdi:battery-{int(soc // 10) * 10}"
 
 
 class EwayStoragePvDailyGenerationSensor(EwayStorageSensorEntity):
@@ -1307,11 +1670,20 @@ class EwayStoragePvDailyGenerationSensor(EwayStorageSensorEntity):
         if daily_gen is not None:
             try:
                 daily_gen_value = float(daily_gen)
-                _LOGGER.debug("Storage PV daily generation sensor value: %s kWh (from %s)", daily_gen_value, daily_gen)
-                return daily_gen_value
+                _LOGGER.debug(
+                    "Storage PV daily generation sensor value: %s kWh (from %s)",
+                    daily_gen_value,
+                    daily_gen,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert PV daily generation %s to float: %s", daily_gen, e)
+                _LOGGER.warning(
+                    "Failed to convert PV daily generation %s to float: %s",
+                    daily_gen,
+                    e,
+                )
                 return None
+            else:
+                return daily_gen_value
         return None
 
 
@@ -1330,11 +1702,20 @@ class EwayStoragePvTotalGenerationSensor(EwayStorageSensorEntity):
         if total_gen is not None:
             try:
                 total_gen_value = float(total_gen)
-                _LOGGER.debug("Storage PV total generation sensor value: %s kWh (from %s)", total_gen_value, total_gen)
-                return total_gen_value
+                _LOGGER.debug(
+                    "Storage PV total generation sensor value: %s kWh (from %s)",
+                    total_gen_value,
+                    total_gen,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert PV total generation %s to float: %s", total_gen, e)
+                _LOGGER.warning(
+                    "Failed to convert PV total generation %s to float: %s",
+                    total_gen,
+                    e,
+                )
                 return None
+            else:
+                return total_gen_value
         return None
 
 
@@ -1353,11 +1734,20 @@ class EwayStorageBatteryDailyChargeSensor(EwayStorageSensorEntity):
         if daily_charge is not None:
             try:
                 daily_charge_value = float(daily_charge)
-                _LOGGER.debug("Storage battery daily charge sensor value: %s kWh (from %s)", daily_charge_value, daily_charge)
-                return daily_charge_value
+                _LOGGER.debug(
+                    "Storage battery daily charge sensor value: %s kWh (from %s)",
+                    daily_charge_value,
+                    daily_charge,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert battery daily charge %s to float: %s", daily_charge, e)
+                _LOGGER.warning(
+                    "Failed to convert battery daily charge %s to float: %s",
+                    daily_charge,
+                    e,
+                )
                 return None
+            else:
+                return daily_charge_value
         return None
 
 
@@ -1376,11 +1766,20 @@ class EwayStorageBatteryTotalChargeSensor(EwayStorageSensorEntity):
         if total_charge is not None:
             try:
                 total_charge_value = float(total_charge)
-                _LOGGER.debug("Storage battery total charge sensor value: %s kWh (from %s)", total_charge_value, total_charge)
-                return total_charge_value
+                _LOGGER.debug(
+                    "Storage battery total charge sensor value: %s kWh (from %s)",
+                    total_charge_value,
+                    total_charge,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert battery total charge %s to float: %s", total_charge, e)
+                _LOGGER.warning(
+                    "Failed to convert battery total charge %s to float: %s",
+                    total_charge,
+                    e,
+                )
                 return None
+            else:
+                return total_charge_value
         return None
 
 
@@ -1399,11 +1798,20 @@ class EwayStorageBatteryDailyDischargeSensor(EwayStorageSensorEntity):
         if daily_discharge is not None:
             try:
                 daily_discharge_value = float(daily_discharge)
-                _LOGGER.debug("Storage battery daily discharge sensor value: %s kWh (from %s)", daily_discharge_value, daily_discharge)
-                return daily_discharge_value
+                _LOGGER.debug(
+                    "Storage battery daily discharge sensor value: %s kWh (from %s)",
+                    daily_discharge_value,
+                    daily_discharge,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert battery daily discharge %s to float: %s", daily_discharge, e)
+                _LOGGER.warning(
+                    "Failed to convert battery daily discharge %s to float: %s",
+                    daily_discharge,
+                    e,
+                )
                 return None
+            else:
+                return daily_discharge_value
         return None
 
 
@@ -1422,9 +1830,18 @@ class EwayStorageBatteryTotalDischargeSensor(EwayStorageSensorEntity):
         if total_discharge is not None:
             try:
                 total_discharge_value = float(total_discharge)
-                _LOGGER.debug("Storage battery total discharge sensor value: %s kWh (from %s)", total_discharge_value, total_discharge)
-                return total_discharge_value
+                _LOGGER.debug(
+                    "Storage battery total discharge sensor value: %s kWh (from %s)",
+                    total_discharge_value,
+                    total_discharge,
+                )
             except (ValueError, TypeError) as e:
-                _LOGGER.warning("Failed to convert battery total discharge %s to float: %s", total_discharge, e)
+                _LOGGER.warning(
+                    "Failed to convert battery total discharge %s to float: %s",
+                    total_discharge,
+                    e,
+                )
                 return None
+            else:
+                return total_discharge_value
         return None

@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import asyncio
+import datetime
 from datetime import timedelta
 import json
 import logging
 import time
-import uuid
 from typing import Any
+import uuid
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-from .const import DEFAULT_SCAN_INTERVAL, DOMAIN, MANUFACTURER
+from .const import DEFAULT_SCAN_INTERVAL, DOMAIN
 from .device_discovery import EwayDeviceInfo
 from .websocket_client import EwayWebSocketClient
 
@@ -52,6 +53,9 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
         self._connection_lock = asyncio.Lock()
         self._discovery = None
         self._discovered_devices: dict[str, EwayDeviceInfo] = {}
+        self._storage_info_response = None
+        self._pending_info_request = None
+        self._info_event = asyncio.Event()  # 新增事件用于等待响应
 
         # Initialize client if host and port are provided
         # For energy storage devices, device_id can be empty
@@ -66,7 +70,9 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
         elif auto_discover:
             # Device discovery functionality has been removed
             # Auto-discovery is no longer supported
-            _LOGGER.warning("Auto-discovery is no longer supported. Please configure device manually.")
+            _LOGGER.warning(
+                "Auto-discovery is no longer supported. Please configure device manually"
+            )
 
     @property
     def device_id(self) -> str:
@@ -116,7 +122,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
                 if not self._client.connected:
                     try:
                         await self._client.connect()
-                    except Exception as exc:
+                    except (ConnectionError, OSError, TimeoutError) as exc:
                         raise UpdateFailed(
                             f"Error connecting to device: {exc}"
                         ) from exc
@@ -126,7 +132,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
                     try:
                         await self._client.disconnect()
                         await self._client.connect()
-                    except Exception as exc:
+                    except (ConnectionError, OSError, TimeoutError) as exc:
                         raise UpdateFailed(
                             f"Error reconnecting to device: {exc}"
                         ) from exc
@@ -137,9 +143,15 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
                     # Actively request device info and status to ensure data is up-to-date
                     await self._client.get_device_info()
                     await self._client.get_device_status()
-                    _LOGGER.debug("Requested device info and status during update cycle")
-                except Exception as exc:
-                    _LOGGER.warning("Failed to request device data during update: %s", exc)
+                    _LOGGER.debug(
+                        "Requested device info and status during update cycle"
+                    )
+                except (ConnectionError, ValueError, OSError, TimeoutError) as exc:
+                    _LOGGER.warning(
+                        "Failed to request device data during update: %s",
+                        exc,
+                        exc_info=True,
+                    )
 
             # Return the current data (may be updated by the requests above)
             return self._device_data.copy()
@@ -164,7 +176,9 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
 
         # Handle dict format messages (original logic)
         if not isinstance(message, dict):
-            _LOGGER.warning("Unexpected message format: %s, expected dict or list", type(message))
+            _LOGGER.warning(
+                "Unexpected message format: %s, expected dict or list", type(message)
+            )
             return
 
         topic = message.get("topic", "")
@@ -211,16 +225,21 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             extend_info = work_mode_info.get("extend", {})
             constant_power = extend_info.get("constantPower", 0)
 
-            _LOGGER.info("Storage workModeInfo: workMode=%s, constantPower=%s", work_mode, constant_power)
+            _LOGGER.info(
+                "Storage workModeInfo: workMode=%s, constantPower=%s",
+                work_mode,
+                constant_power,
+            )
 
             # Store storage info response for async_get_storage_info method
-            if hasattr(self, '_pending_info_request'):
+            if hasattr(self, "_pending_info_request"):
                 self._storage_info_response = {
                     "workMode": work_mode,
                     "constantPower": constant_power,
                     "workModeInfo": work_mode_info,
-                    "payload": payload
+                    "payload": payload,
                 }
+                self._info_event.set()  # 设置事件信号
                 _LOGGER.info("Stored storage info response for pending request")
 
             # Store in device data for entities to access
@@ -240,7 +259,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
                 "dod": payload.get("dod"),
                 "work_mode": work_mode,
                 "constant_power": constant_power,
-                "work_mode_info": work_mode_info
+                "work_mode_info": work_mode_info,
             }
 
             self._device_data["storage_info"] = storage_info
@@ -439,11 +458,11 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             # Extract charging session data
             charging_session = {
                 "degrees": payload.get("degrees", 0.0),  # Charging energy (kWh)
-            "duration": payload.get("duration", 0),  # Charging duration
-            "end_time": payload.get("endTime"),  # Charging end time
-            "start_time": payload.get("startTime"),  # Charging start time
-            "stop_reason": payload.get("stopReason", ""),  # Stop reason
-            "error_codes": payload.get("errCode", []),  # Error codes
+                "duration": payload.get("duration", 0),  # Charging duration
+                "end_time": payload.get("endTime"),  # Charging end time
+                "start_time": payload.get("startTime"),  # Charging start time
+                "stop_reason": payload.get("stopReason", ""),  # Stop reason
+                "error_codes": payload.get("errCode", []),  # Error codes
                 "user_id": payload.get("userId", ""),
             }
 
@@ -610,7 +629,9 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
                 "charging_status": payload.get(
                     "chargingStatus"
                 ),  # Charging status 0: not charging 1: charging 2: charge complete
-                "gun_status": payload.get("gunStatus"),  # Gun status 0: not inserted 1: inserted
+                "gun_status": payload.get(
+                    "gunStatus"
+                ),  # Gun status 0: not inserted 1: inserted
                 "pile_status": self._map_pile_status(
                     payload.get("pileStatus")
                 ),  # Pile status 0: idle 1: charging 2: fault
@@ -672,6 +693,15 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             "timestamp_formatted": timestamp_formatted,  # Convert timestamp to readable format
             "protocol_version": payload.get("protocolVer", ""),  # Protocol version
             "output_power": output_power,  # Output power (W)
+            "pv_power": 0.0,  # PV input total power (W)
+            "pv_daily_generation": 0.0,  # PV daily generation (kWh)
+            "pv_total_generation": 0.0,  # PV total generation (kWh)
+            "battery_power": 0.0,  # Battery power (W)
+            "battery_soc": 0.0,  # Battery total SOC (%)
+            "battery_daily_charge": 0.0,  # Battery daily charge (kWh)
+            "battery_total_charge": 0.0,  # Battery total charge (kWh)
+            "battery_daily_discharge": 0.0,  # Battery daily discharge (kWh)
+            "battery_total_discharge": 0.0,  # Battery total discharge (kWh)
         }
 
         # Extract PV data
@@ -687,11 +717,13 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             total_gen_raw = pv_data.get("totalGen", 0.0)
             total_gen = round(total_gen_raw, 2) if total_gen_raw else 0.0
 
-            storage_data.update({
-                "pv_power": pv_power,  # PV input total power (W)
-                "pv_daily_generation": daily_gen,  # PV daily generation (kWh)
-                "pv_total_generation": total_gen,  # PV total generation (kWh)
-            })
+            storage_data.update(
+                {
+                    "pv_power": pv_power,  # PV input total power (W)
+                    "pv_daily_generation": daily_gen,  # PV daily generation (kWh)
+                    "pv_total_generation": total_gen,  # PV total generation (kWh)
+                }
+            )
 
         # Extract battery data
         battery_data = payload.get("battery", {})
@@ -709,19 +741,25 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             total_charge = round(total_charge_raw, 2) if total_charge_raw else 0.0
 
             daily_discharge_raw = battery_data.get("batteryDailyDischarge", 0.0)
-            daily_discharge = round(daily_discharge_raw, 2) if daily_discharge_raw else 0.0
+            daily_discharge = (
+                round(daily_discharge_raw, 2) if daily_discharge_raw else 0.0
+            )
 
             total_discharge_raw = battery_data.get("batteryTotalDischarge", 0.0)
-            total_discharge = round(total_discharge_raw, 2) if total_discharge_raw else 0.0
+            total_discharge = (
+                round(total_discharge_raw, 2) if total_discharge_raw else 0.0
+            )
 
-            storage_data.update({
-                "battery_power": battery_power,  # Battery power (W)
-                "battery_soc": battery_soc,  # Battery total SOC (%)
-                "battery_daily_charge": daily_charge,  # Battery daily charge (kWh)
-                "battery_total_charge": total_charge,  # Battery total charge (kWh)
-                "battery_daily_discharge": daily_discharge,  # Battery daily discharge (kWh)
-                "battery_total_discharge": total_discharge,  # Battery total discharge (kWh)
-            })
+            storage_data.update(
+                {
+                    "battery_power": battery_power,  # Battery power (W)
+                    "battery_soc": battery_soc,  # Battery total SOC (%)
+                    "battery_daily_charge": daily_charge,  # Battery daily charge (kWh)
+                    "battery_total_charge": total_charge,  # Battery total charge (kWh)
+                    "battery_daily_discharge": daily_discharge,  # Battery daily discharge (kWh)
+                    "battery_total_discharge": total_discharge,  # Battery total discharge (kWh)
+                }
+            )
 
         # Store storage mini data
         self._device_data["storage_mini"] = storage_data
@@ -729,10 +767,14 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
         # Also store protocol version in device_info for firmware version display
         if "device_info" not in self._device_data:
             self._device_data["device_info"] = {}
-        self._device_data["device_info"]["protocol_version"] = payload.get("protocolVer", "")
+        self._device_data["device_info"]["protocol_version"] = payload.get(
+            "protocolVer", ""
+        )
 
         _LOGGER.warning("🔋 Storage mini data parsed: %s", storage_data)
-        _LOGGER.warning("🔋 Current device data keys: %s", list(self._device_data.keys()))
+        _LOGGER.warning(
+            "🔋 Current device data keys: %s", list(self._device_data.keys())
+        )
 
         # Update device registry with new firmware version
         self._update_device_registry(self._device_data["device_info"])
@@ -747,11 +789,10 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             return ""
 
         try:
-            import datetime
             # Convert milliseconds to seconds
             timestamp_s = timestamp_ms / 1000
             # Convert to datetime object
-            dt = datetime.datetime.fromtimestamp(timestamp_s, tz=datetime.timezone.utc)
+            dt = datetime.datetime.fromtimestamp(timestamp_s, tz=datetime.UTC)
             # Format as ISO string
             return dt.isoformat()
         except (ValueError, OSError) as exc:
@@ -766,7 +807,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
 
             try:
                 await self._client.send_message(command)
-            except Exception as exc:
+            except (ConnectionError, OSError, TimeoutError) as exc:
                 _LOGGER.error("Failed to send command: %s", exc)
                 raise
 
@@ -806,7 +847,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             try:
                 await self._client.get_device_info()
                 _LOGGER.info("Device info request sent")
-            except Exception as exc:
+            except (ConnectionError, ValueError, OSError, TimeoutError) as exc:
                 _LOGGER.error("Failed to get device info: %s", exc)
                 raise
 
@@ -819,7 +860,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             try:
                 await self._client.get_device_status()
                 _LOGGER.info("Device status request sent")
-            except Exception as exc:
+            except (ConnectionError, ValueError, OSError, TimeoutError) as exc:
                 _LOGGER.error("Failed to get device status: %s", exc)
                 raise
 
@@ -888,7 +929,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
         try:
             await self._client.connect()
             _LOGGER.info("Successfully connected to discovered device: %s", device_name)
-        except Exception as exc:  # noqa: BLE001
+        except (ConnectionError, OSError, TimeoutError) as exc:
             _LOGGER.error(
                 "Failed to connect to discovered device %s: %s", device_name, exc
             )
@@ -970,15 +1011,9 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
                 "deviceNum": self._device_sn,
                 "source": "ws",
                 "property": [
-                    {
-                        "id": "workMode",
-                        "value": "0",
-                        "extend": {
-                            "constantPower": power
-                        }
-                    }
-                ]
-            }
+                    {"id": "workMode", "value": "0", "extend": {"constantPower": power}}
+                ],
+            },
         }
         _LOGGER.info("Sending storage power control command: %s", command)
         await self.async_send_command(command)
@@ -999,8 +1034,8 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             "payload": {
                 "timestamp": timestamp,
                 "messageId": message_id,
-                "source": "ws"
-            }
+                "source": "ws",
+            },
         }
 
         _LOGGER.info("Sending storage info request command: %s", command)
@@ -1014,7 +1049,10 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             # Wait for response (with timeout)
             for _ in range(50):  # Wait up to 5 seconds (50 * 0.1s)
                 await asyncio.sleep(0.1)
-                if hasattr(self, '_storage_info_response') and self._storage_info_response:
+                if (
+                    hasattr(self, "_storage_info_response")
+                    and self._storage_info_response
+                ):
                     response = self._storage_info_response
                     self._storage_info_response = None  # Clear the response
                     return response
@@ -1022,7 +1060,7 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("Timeout waiting for storage info response")
             return None
 
-        except Exception as exc:
+        except (ConnectionError, ValueError, OSError, TimeoutError) as exc:
             _LOGGER.error("Failed to get storage info: %s", exc)
             raise
 
@@ -1055,20 +1093,43 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
                 elif self._device_type == "energy_storage":
                     # For energy storage devices, use protocol version if available
                     # Otherwise use app firmware version
-                    sw_version = device_info.get("protocol_version") or device_info.get("app_firmware_version")
+                    sw_version = device_info.get("protocol_version") or device_info.get(
+                        "app_firmware_version"
+                    )
 
                 # Only update if we have a valid firmware version
                 if sw_version:
                     # Update device with new firmware version
                     device_registry.async_update_device(
-                        device.id,
-                        sw_version=str(sw_version)
+                        device.id, sw_version=str(sw_version)
                     )
-                    _LOGGER.warning("Updated device registry firmware version to: %s for device %s", sw_version, device_identifier)
+                    _LOGGER.warning(
+                        "Updated device registry firmware version to: %s for device %s",
+                        sw_version,
+                        device_identifier,
+                    )
                 else:
-                    _LOGGER.warning("No firmware version available to update device registry for device %s", device_identifier)
+                    _LOGGER.warning(
+                        "No firmware version available to update device registry for device %s",
+                        device_identifier,
+                    )
             else:
-                _LOGGER.warning("Device not found in registry for update with identifier: %s", device_identifier)
+                _LOGGER.warning(
+                    "Device not found in registry for update with identifier: %s",
+                    device_identifier,
+                )
 
-        except Exception as exc:
+        except (AttributeError, KeyError, ValueError) as exc:
             _LOGGER.error("Failed to update device registry: %s", exc)
+
+    async def _wait_for_storage_info_response(self):
+        """Wait for storage info response with timeout."""
+        try:
+            await asyncio.wait_for(self._info_event.wait(), timeout=5.0)
+            response = self._storage_info_response
+            self._info_event.clear()  # 清除事件以备下次使用
+            self._storage_info_response = None  # 清除响应
+            return response
+        except asyncio.TimeoutError:
+            _LOGGER.warning("Timeout waiting for storage info response")
+            return None
