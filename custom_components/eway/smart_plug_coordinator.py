@@ -35,7 +35,7 @@ class EwaySmartPlugCoordinator(DataUpdateCoordinator):
             hass,
             _LOGGER,
             name=f"{DOMAIN}_smart_plug",
-            update_interval=timedelta(seconds=10),  # 每10秒更新一次
+            update_interval=timedelta(seconds=5),  # 每5秒更新一次
         )
         self._host = host
         self._device_sn = device_sn or ""
