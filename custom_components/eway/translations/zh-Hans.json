@@ -391,7 +391,19 @@
             "state": {
                 "no_errors": "无错误"
             }
-        }
+        },
+      "smart_plug_power": {
+        "name": "功率"
+      },
+      "smart_plug_voltage": {
+        "name": "电压"
+      },
+      "smart_plug_current": {
+        "name": "电流"
+      },
+      "smart_plug_temperature": {
+        "name": "温度"
+      }
     },
     "number": {
       "storage_power": {
@@ -447,6 +459,11 @@
           "on": "已启用",
           "off": "已禁用"
         }
+      }
+    },
+    "switch": {
+      "smart_plug_switch": {
+        "name": "开关"
       }
     }
   }

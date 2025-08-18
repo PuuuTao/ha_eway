@@ -82,6 +82,16 @@ class EwayDeviceInfo:
                 # CT devices don't have device_id, only SN
                 return "", device_sn, "ct"
 
+            # Check if it's a smart plug device
+            if name_part.startswith("EwayPlug-"):
+                # Remove the prefix
+                remaining = name_part[len("EwayPlug-") :]
+
+                # For smart plug, the remaining part is the SN
+                device_sn = remaining.strip()
+                # Smart plug devices don't have device_id, only SN
+                return "", device_sn, "smart_plug"
+
             _LOGGER.warning("Device name %s does not start with expected prefix", name)
             return "unknown", "unknown", "unknown"  # noqa: TRY300
 

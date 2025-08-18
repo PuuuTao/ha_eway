@@ -12,6 +12,7 @@ from homeassistant.helpers.typing import ConfigType
 from .const import CONF_DEVICE_ID, CONF_DEVICE_SN, CONF_HOST, CONF_PORT, DOMAIN
 from .coordinator import EwayChargerCoordinator
 from .ct_coordinator import EwayCTCoordinator
+from .smart_plug_coordinator import EwaySmartPlugCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -39,6 +40,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if device_type == "ct":
         # Initialize CT coordinator
         coordinator = EwayCTCoordinator(
+            hass,
+            host=entry.data[CONF_HOST],
+            device_sn=entry.data.get(CONF_DEVICE_SN, ""),
+        )
+    elif device_type == "smart_plug":
+        # Initialize Smart Plug coordinator
+        coordinator = EwaySmartPlugCoordinator(
             hass,
             host=entry.data[CONF_HOST],
             device_sn=entry.data.get(CONF_DEVICE_SN, ""),

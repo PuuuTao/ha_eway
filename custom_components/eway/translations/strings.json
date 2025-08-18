@@ -10,7 +10,9 @@
         "data_description": {
           "device_type": {
             "charger": "🔌 Charger",
-            "energy_storage": "🔋 Energy Storage"
+            "energy_storage": "🔋 Energy Storage",
+            "ct": "⚡ CT Device",
+            "smart_plug": "🔌 Smart Plug"
           }
         }
       },
@@ -44,12 +46,40 @@
           }
         }
       },
+      "smart_plug": {
+        "title": "Eway Smart Plug Setup",
+        "description": "Choose configuration method",
+        "data": {
+          "config_method": "Configuration Method"
+        },
+        "data_description": {
+          "config_method": {
+            "manual": "🔧 Manual Configuration",
+            "discovered": "🔍 Use Discovered Device"
+          }
+        }
+      },
       "manual_energy_storage": {
         "title": "Manual Energy Storage Configuration",
         "description": "Manually configure your Eway Energy Storage connection (Port is automatically set to 80)",
         "data": {
           "host": "Host",
           "device_sn": "Device Serial Number"
+        }
+      },
+      "manual_smart_plug": {
+        "title": "Manual Smart Plug Configuration",
+        "description": "Manually configure your Eway Smart Plug connection (Port is automatically set to 80)",
+        "data": {
+          "host": "Host",
+          "device_sn": "Device Serial Number"
+        }
+      },
+      "discovery_smart_plug": {
+        "title": "Select Discovered Smart Plug",
+        "description": "Choose a smart plug device to connect",
+        "data": {
+          "discovered_device": "Discovered Device"
         }
       },
       "manual": {
@@ -241,6 +271,18 @@
       },
       "storage_battery_soc": {
         "name": "Storage Battery SOC"
+      },
+      "smart_plug_power": {
+        "name": "Power"
+      },
+      "smart_plug_voltage": {
+        "name": "Voltage"
+      },
+      "smart_plug_current": {
+        "name": "Current"
+      },
+      "smart_plug_temperature": {
+        "name": "Temperature"
       }
     },
     "binary_sensor": {
@@ -285,6 +327,18 @@
           "on": "Error",
           "off": "Normal"
         }
+      },
+      "switch_state": {
+        "name": "Switch State",
+        "state": {
+          "on": "On",
+          "off": "Off"
+        }
+      }
+    },
+    "switch": {
+      "smart_plug_switch": {
+        "name": "Switch"
       }
     }
   }

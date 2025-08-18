@@ -31,6 +31,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
 from .coordinator import EwayChargerCoordinator
 from .ct_coordinator import EwayCTCoordinator
+from .smart_plug_coordinator import EwaySmartPlugCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -98,6 +99,42 @@ CT_SENSOR_CONFIGS = {
         "device_class": None,
         "state_class": None,
         "unit": None,
+        "enabled_by_default": True,
+    },
+}
+
+# Smart Plug sensor configurations
+SMART_PLUG_SENSOR_CONFIGS = {
+    "smart_plug_power": {
+        "translation_key": "smart_plug_power",
+        "icon": "mdi:flash",
+        "device_class": SensorDeviceClass.POWER,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": UnitOfPower.WATT,
+        "enabled_by_default": True,
+    },
+    "smart_plug_voltage": {
+        "translation_key": "smart_plug_voltage",
+        "icon": "mdi:flash-triangle",
+        "device_class": SensorDeviceClass.VOLTAGE,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": UnitOfElectricPotential.VOLT,
+        "enabled_by_default": True,
+    },
+    "smart_plug_current": {
+        "translation_key": "smart_plug_current",
+        "icon": "mdi:current-ac",
+        "device_class": SensorDeviceClass.CURRENT,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": UnitOfElectricCurrent.AMPERE,
+        "enabled_by_default": True,
+    },
+    "smart_plug_temperature": {
+        "translation_key": "smart_plug_temperature",
+        "icon": "mdi:thermometer",
+        "device_class": SensorDeviceClass.TEMPERATURE,
+        "state_class": SensorStateClass.MEASUREMENT,
+        "unit": UnitOfTemperature.CELSIUS,
         "enabled_by_default": True,
     },
 }
@@ -706,10 +743,42 @@ async def async_setup_entry(
                 sensor_class = ct_sensor_classes[sensor_key]
                 entities.append(sensor_class(coordinator, sensor_key, config))
 
+    # Set up smart plug sensors for smart plug devices
+    elif coordinator.device_type == "smart_plug":
+        _LOGGER.debug(
+            "Setting up smart plug sensors for device type: %s", coordinator.device_type
+        )
+
+        # Get enabled smart plug sensors from config entry options
+        enabled_smart_plug_sensors = config_entry.options.get(
+            "enabled_smart_plug_sensors", []
+        )
+        if not enabled_smart_plug_sensors:
+            # If not configured, use all smart plug sensors as default
+            enabled_smart_plug_sensors = list(SMART_PLUG_SENSOR_CONFIGS.keys())
+
+        # Smart plug sensor class mapping
+        smart_plug_sensor_classes = {
+            "smart_plug_power": EwaySmartPlugPowerSensor,
+            "smart_plug_voltage": EwaySmartPlugVoltageSensor,
+            "smart_plug_current": EwaySmartPlugCurrentSensor,
+            "smart_plug_temperature": EwaySmartPlugTemperatureSensor,
+        }
+
+        for sensor_key in enabled_smart_plug_sensors:
+            if (
+                sensor_key in SMART_PLUG_SENSOR_CONFIGS
+                and sensor_key in smart_plug_sensor_classes
+            ):
+                config = SMART_PLUG_SENSOR_CONFIGS[sensor_key]
+                sensor_class = smart_plug_sensor_classes[sensor_key]
+                entities.append(sensor_class(coordinator, sensor_key, config))
+
     else:
         _LOGGER.debug(
-            "Unknown device type: %s, skipping sensor setup", coordinator.device_type
+            "No sensors available for device type: %s", coordinator.device_type
         )
+        return
 
     async_add_entities(entities)
 
@@ -760,7 +829,6 @@ class EwayChargerSensorEntity(CoordinatorEntity, SensorEntity):
 
         return {
             "identifiers": {(DOMAIN, device_identifier)},
-            "name": device_name,
             "manufacturer": MANUFACTURER,
             "model": get_device_model(self.coordinator.device_type),
             "sw_version": self._get_firmware_version(),
@@ -1024,7 +1092,6 @@ class EwayCTSensorEntity(CoordinatorEntity, SensorEntity):
 
         return DeviceInfo(
             identifiers={(DOMAIN, device_identifier)},
-            name=get_device_name(self.coordinator.device_type, device_identifier),
             manufacturer=MANUFACTURER,
             model=get_device_model(self.coordinator.device_type),
             sw_version=None,
@@ -1844,4 +1911,221 @@ class EwayStorageBatteryTotalDischargeSensor(EwayStorageSensorEntity):
                 return None
             else:
                 return total_discharge_value
+        return None
+
+
+class EwaySmartPlugSensorEntity(CoordinatorEntity, SensorEntity):
+    """Base class for Eway Smart Plug sensor entities."""
+
+    def __init__(
+        self,
+        coordinator: EwaySmartPlugCoordinator,
+        sensor_key: str,
+        config: dict[str, Any],
+    ) -> None:
+        super().__init__(coordinator)
+        self._sensor_key = sensor_key
+        self._config = config
+        self._attr_has_entity_name = True
+        self._attr_translation_key = config.get("translation_key")
+        self._attr_icon = config.get("icon")
+        self._attr_device_class = config.get("device_class")
+        self._attr_state_class = config.get("state_class")
+        self._attr_native_unit_of_measurement = config.get("unit")
+        self._attr_entity_registry_enabled_default = config.get("enabled_by_default", True)
+        self._attr_unique_id = f"{coordinator.device_sn}_{sensor_key}"
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device information."""
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.device_sn)},
+            "manufacturer": MANUFACTURER,
+            "model": get_device_model("smart_plug"),
+            "sw_version": None,
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.coordinator.last_update_success
+
+    def _get_smart_plug_data_value(self, key: str) -> Any:
+        """Get value from smart plug data."""
+        if self.coordinator.data:
+            return self.coordinator.data.get(key)
+        return None
+
+    def _get_smart_plug_nested_value(self, parent_key: str, child_key: str) -> Any:
+        """Get nested value from smart plug data."""
+        if self.coordinator.data:
+            parent_data = self.coordinator.data.get(parent_key)
+            if parent_data and isinstance(parent_data, dict):
+                return parent_data.get(child_key)
+        return None
+
+
+class EwaySmartPlugPowerSensor(EwaySmartPlugSensorEntity):
+    """Smart Plug Power sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the native value of the sensor."""
+        power = self._get_smart_plug_data_value("power")
+        if power is not None:
+            try:
+                power_value = float(power)
+                _LOGGER.debug(
+                    "Smart plug power sensor value: %s W (from %s)",
+                    power_value,
+                    power,
+                )
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Failed to convert power %s to float: %s",
+                    power,
+                    e,
+                )
+                return None
+            else:
+                return power_value
+        return None
+
+
+class EwaySmartPlugVoltageSensor(EwaySmartPlugSensorEntity):
+    """Smart Plug Voltage sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the native value of the sensor."""
+        voltage = self._get_smart_plug_data_value("voltage")
+        if voltage is not None:
+            try:
+                voltage_value = float(voltage)
+                _LOGGER.debug(
+                    "Smart plug voltage sensor value: %s V (from %s)",
+                    voltage_value,
+                    voltage,
+                )
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Failed to convert voltage %s to float: %s",
+                    voltage,
+                    e,
+                )
+                return None
+            else:
+                return voltage_value
+        return None
+
+
+class EwaySmartPlugCurrentSensor(EwaySmartPlugSensorEntity):
+    """Smart Plug Current sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 3
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the native value of the sensor."""
+        current = self._get_smart_plug_data_value("current")
+        if current is not None:
+            try:
+                current_value = float(current)
+                _LOGGER.debug(
+                    "Smart plug current sensor value: %s A (from %s)",
+                    current_value,
+                    current,
+                )
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Failed to convert current %s to float: %s",
+                    current,
+                    e,
+                )
+                return None
+            else:
+                return current_value
+        return None
+
+
+
+
+
+class EwaySmartPlugTemperatureSensor(EwaySmartPlugSensorEntity):
+    """Smart Plug Temperature sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the native value of the sensor."""
+        # Try multiple ways to get temperature data
+        temperature = None
+
+        # Method 1: Try direct key "tC"
+        temperature = self._get_smart_plug_data_value("tC")
+        if temperature is not None:
+            try:
+                temperature_value = float(temperature)
+                _LOGGER.debug(
+                    "Smart plug temperature sensor value (direct tC): %s °C",
+                    temperature_value,
+                )
+                return temperature_value
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Failed to convert temperature %s to float: %s",
+                    temperature,
+                    e,
+                )
+
+        # Method 2: Try nested approach
+        temperature = self._get_smart_plug_nested_value("temperature", "tC")
+        if temperature is not None:
+            try:
+                temperature_value = float(temperature)
+                _LOGGER.debug(
+                    "Smart plug temperature sensor value (nested): %s °C",
+                    temperature_value,
+                )
+                return temperature_value
+            except (ValueError, TypeError) as e:
+                _LOGGER.warning(
+                    "Failed to convert nested temperature %s to float: %s",
+                    temperature,
+                    e,
+                )
+
+        # Method 3: Try other possible temperature keys
+        for temp_key in ["temp", "temperature", "t"]:
+            temperature = self._get_smart_plug_data_value(temp_key)
+            if temperature is not None:
+                try:
+                    temperature_value = float(temperature)
+                    _LOGGER.debug(
+                        "Smart plug temperature sensor value (%s): %s °C",
+                        temp_key,
+                        temperature_value,
+                    )
+                    return temperature_value
+                except (ValueError, TypeError):
+                    continue
+
+        _LOGGER.debug("No temperature data found for smart plug")
         return None

@@ -379,6 +379,18 @@
         "state": {
           "no_errors": "No Errors"
         }
+      },
+      "smart_plug_power": {
+        "name": "Power"
+      },
+      "smart_plug_voltage": {
+        "name": "Voltage"
+      },
+      "smart_plug_current": {
+        "name": "Current"
+      },
+      "smart_plug_temperature": {
+        "name": "Temperature"
       }
     },
     "number": {
@@ -435,6 +447,11 @@
           "on": "Enabled",
           "off": "Disabled"
         }
+      }
+    },
+    "switch": {
+      "smart_plug_switch": {
+        "name": "Switch"
       }
     }
   }

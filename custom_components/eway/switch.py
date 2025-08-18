@@ -16,6 +16,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
 from .coordinator import EwayChargerCoordinator
 from .ct_coordinator import EwayCTCoordinator
+from .smart_plug_coordinator import EwaySmartPlugCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +39,11 @@ async def async_setup_entry(
     elif coordinator.device_type == "ct":
         entities.append(EwayCTAntiBackflowSwitch(coordinator))
         _LOGGER.debug("Added CT anti-backflow switch for device type: %s", coordinator.device_type)
+
+    # Set up smart plug switch for smart plug devices
+    elif coordinator.device_type == "smart_plug":
+        entities.append(EwaySmartPlugSwitch(coordinator))
+        _LOGGER.debug("Added smart plug switch for device type: %s", coordinator.device_type)
 
     else:
         _LOGGER.debug(
@@ -262,4 +268,70 @@ class EwayCTAntiBackflowSwitch(CoordinatorEntity, SwitchEntity):
                 raise ValueError("Failed to disable anti-backflow")
         except Exception as exc:
             _LOGGER.error("Failed to disable anti-backflow: %s", exc)
+            raise
+
+
+class EwaySmartPlugSwitch(CoordinatorEntity, SwitchEntity):
+    """Switch entity for Eway Smart Plug."""
+
+    def __init__(self, coordinator: EwaySmartPlugCoordinator) -> None:
+        """Initialize the switch."""
+        super().__init__(coordinator)
+        self._attr_has_entity_name = True
+        self._attr_unique_id = f"{coordinator.device_sn}_smart_plug_switch"
+        self._attr_translation_key = "smart_plug_switch"
+        self._attr_icon = "mdi:power-socket"
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device information."""
+        return {
+            "identifiers": {(DOMAIN, self.coordinator.device_sn)},
+            "manufacturer": MANUFACTURER,
+            "model": get_device_model("smart_plug"),
+            "sw_version": None,
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.coordinator.last_update_success
+
+    @property
+    def is_on(self) -> bool:
+        """Return True if the switch is on."""
+        if self.coordinator.data:
+            switch_state = self.coordinator.data.get("switch_state")
+            if switch_state is not None:
+                return bool(switch_state)
+        return False
+
+    async def async_turn_on(self, **kwargs: Any) -> None:
+        """Turn the switch on."""
+        try:
+            success = await self.coordinator.async_set_switch_state(True)
+            if success:
+                _LOGGER.info("Turned on smart plug %s", self.coordinator.device_id)
+                # Request immediate update to reflect the change
+                await self.coordinator.async_request_refresh()
+            else:
+                _LOGGER.error("Failed to turn on smart plug %s", self.coordinator.device_id)
+                raise ValueError("Failed to turn on smart plug")
+        except Exception as exc:
+            _LOGGER.error("Failed to turn on smart plug: %s", exc)
+            raise
+
+    async def async_turn_off(self, **kwargs: Any) -> None:
+        """Turn the switch off."""
+        try:
+            success = await self.coordinator.async_set_switch_state(False)
+            if success:
+                _LOGGER.info("Turned off smart plug %s", self.coordinator.device_id)
+                # Request immediate update to reflect the change
+                await self.coordinator.async_request_refresh()
+            else:
+                _LOGGER.error("Failed to turn off smart plug %s", self.coordinator.device_id)
+                raise ValueError("Failed to turn off smart plug")
+        except Exception as exc:
+            _LOGGER.error("Failed to turn off smart plug: %s", exc)
             raise

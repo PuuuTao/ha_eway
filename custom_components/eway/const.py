@@ -18,6 +18,7 @@ MANUFACTURER = "Eway"
 MODEL_CHARGER = "Smart Charger"
 MODEL_STORAGE = "Energy Storage"
 MODEL_CT = "CT Device"
+MODEL_SMART_PLUG = "Smart Plug"
 
 def get_device_model(device_type: str) -> str:
     """Get device model based on device type."""
@@ -25,6 +26,8 @@ def get_device_model(device_type: str) -> str:
         return MODEL_STORAGE
     elif device_type == "ct":
         return MODEL_CT
+    elif device_type == "smart_plug":
+        return MODEL_SMART_PLUG
     return MODEL_CHARGER
 
 def get_device_name(device_type: str, device_id: str) -> str:
@@ -33,6 +36,8 @@ def get_device_name(device_type: str, device_id: str) -> str:
         return f"Energy Storage {device_id}"
     elif device_type == "ct":
         return f"CT Device {device_id}"
+    elif device_type == "smart_plug":
+        return f"Smart Plug {device_id}"
     return f"Eway Charger {device_id}"
 
 # Configuration keys

@@ -17,6 +17,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
 from .coordinator import EwayChargerCoordinator
+# smart_plug_coordinator import removed - no longer needed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -60,6 +61,9 @@ BINARY_SENSOR_CONFIGS = {
     },
 }
 
+# Smart plug binary sensor configurations - REMOVED
+# Smart plugs no longer use binary sensors
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -68,38 +72,46 @@ async def async_setup_entry(
 ) -> None:
     """Set up the binary sensor platform."""
     coordinator = hass.data[DOMAIN][config_entry.entry_id]
-
-    # Only set up charger binary sensors for charger devices
-    if coordinator.device_type != "charger":
-        _LOGGER.debug(
-            "Skipping charger binary sensors for device type: %s",
-            coordinator.device_type,
-        )
-        return
-
-    # Only set up charger binary sensors for charger devices
     device_type = config_entry.data.get("device_type", "charger")
-    if device_type != "charger":
-        # Skip charger binary sensors for non-charger devices
-        return
-
-    # Get enabled sensors from config entry options
-    enabled_sensors = config_entry.options.get("enabled_sensors", [])
-
     entities = []
 
-    for sensor_key, config in BINARY_SENSOR_CONFIGS.items():
-        # Check if sensor is enabled (with or without binary_ prefix)
-        binary_key = f"binary_{sensor_key}"
-        is_enabled = (
-            enabled_sensors
-            and (sensor_key in enabled_sensors or binary_key in enabled_sensors)
-        ) or (not enabled_sensors and config.get("enabled_by_default", False))
+    # Set up charger binary sensors for charger devices
+    if device_type == "charger":
+        _LOGGER.debug(
+            "Setting up charger binary sensors for device type: %s",
+            coordinator.device_type,
+        )
 
-        if is_enabled:
-            entities.append(
-                EwayChargerBinarySensorEntity(coordinator, sensor_key, config)
-            )
+        # Get enabled sensors from config entry options
+        enabled_sensors = config_entry.options.get("enabled_sensors", [])
+
+        for sensor_key, config in BINARY_SENSOR_CONFIGS.items():
+            # Check if sensor is enabled (with or without binary_ prefix)
+            binary_key = f"binary_{sensor_key}"
+            is_enabled = (
+                enabled_sensors
+                and (sensor_key in enabled_sensors or binary_key in enabled_sensors)
+            ) or (not enabled_sensors and config.get("enabled_by_default", False))
+
+            if is_enabled:
+                entities.append(
+                    EwayChargerBinarySensorEntity(coordinator, sensor_key, config)
+                )
+
+    # Smart plug devices no longer use binary sensors
+    elif device_type == "smart_plug":
+        _LOGGER.debug(
+            "Skipping binary sensors for smart plug device type: %s (not needed)",
+            device_type,
+        )
+        # Smart plugs now use switch entities instead of binary sensors
+        pass
+    else:
+        _LOGGER.debug(
+            "Skipping binary sensors for unsupported device type: %s",
+            device_type,
+        )
+        return
 
     async_add_entities(entities)
 
@@ -232,3 +244,7 @@ class EwayChargerBinarySensorEntity(CoordinatorEntity, BinarySensorEntity):
                     "error_count": len(err_code),
                 }
         return None
+
+
+# EwaySmartPlugBinarySensorEntity class removed
+# Smart plugs no longer use binary sensors, they use switch entities instead
