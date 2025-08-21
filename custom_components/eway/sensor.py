@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal
 import logging
 from typing import Any
@@ -29,9 +29,7 @@ from homeassistant.helpers.typing import StateType
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
-from .coordinator import EwayChargerCoordinator
-from .ct_coordinator import EwayCTCoordinator
-from .smart_plug_coordinator import EwaySmartPlugCoordinator
+from .coordinator import EwayChargerCoordinator, EwayStorageCoordinator, EwayCTCoordinator, EwaySmartPlugCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -674,7 +672,7 @@ async def async_setup_entry(
 
     # Set up storage sensors for energy storage devices
     elif coordinator.device_type == "energy_storage":
-        _LOGGER.debug(
+        _LOGGER.warning(
             "Setting up storage sensors for device type: %s", coordinator.device_type
         )
 
@@ -683,8 +681,11 @@ async def async_setup_entry(
             "enabled_storage_sensors", []
         )
         if not enabled_storage_sensors:
-            # If not configured, use all storage sensors as default
-            enabled_storage_sensors = list(STORAGE_SENSOR_CONFIGS.keys())
+            # Fix: Correctly get default enabled sensors
+            enabled_storage_sensors = [
+                key for key, config in STORAGE_SENSOR_CONFIGS.items()
+                if config.get("enabled_by_default", False)
+            ]
 
         # Storage sensor class mapping
         storage_sensor_classes = {
@@ -702,14 +703,14 @@ async def async_setup_entry(
             "storage_battery_total_discharge": EwayStorageBatteryTotalDischargeSensor,
         }
 
+        # Add debug logging to see what sensors are being set up
+        _LOGGER.warning("Enabled storage sensors: %s", enabled_storage_sensors)
+
         for sensor_key in enabled_storage_sensors:
-            if (
-                sensor_key in STORAGE_SENSOR_CONFIGS
-                and sensor_key in storage_sensor_classes
-            ):
-                config = STORAGE_SENSOR_CONFIGS[sensor_key]
+            if sensor_key in STORAGE_SENSOR_CONFIGS and sensor_key in storage_sensor_classes:
                 sensor_class = storage_sensor_classes[sensor_key]
-                entities.append(sensor_class(coordinator, sensor_key, config))
+                entities.append(sensor_class(coordinator, sensor_key))
+                _LOGGER.warning("Added storage sensor: %s", sensor_key)
 
     # Set up CT sensors for CT devices
     elif coordinator.device_type == "ct":
@@ -796,7 +797,7 @@ class EwayChargerSensorEntity(CoordinatorEntity, SensorEntity):
         super().__init__(coordinator)
         self._sensor_key = sensor_key
         self._config = config
-        self._attr_unique_id = f"{coordinator.device_sn or coordinator.host}_{sensor_key}"
+        self._attr_unique_id = f"{coordinator.device_id}_{sensor_key}"
         # self._attr_name = config["name"]  # Only show sensor name, not including DOMAIN and device ID
         self._attr_has_entity_name = True
         self._attr_translation_key = config.get("translation_key")
@@ -829,6 +830,7 @@ class EwayChargerSensorEntity(CoordinatorEntity, SensorEntity):
 
         return {
             "identifiers": {(DOMAIN, device_identifier)},
+            "name": device_name,
             "manufacturer": MANUFACTURER,
             "model": get_device_model(self.coordinator.device_type),
             "sw_version": self._get_firmware_version(),
@@ -1058,203 +1060,6 @@ class EwayDeviceStatusSensor(EwayChargerSensorEntity):
                 else None
             )
             return None
-
-
-# CT Sensor Entity Classes
-class EwayCTSensorEntity(CoordinatorEntity, SensorEntity):
-    """Base class for CT sensor entities."""
-
-    def __init__(
-        self,
-        coordinator: EwayCTCoordinator,
-        sensor_key: str,
-        config: dict[str, Any],
-    ) -> None:
-        """Initialize the CT sensor entity."""
-        super().__init__(coordinator)
-        self._sensor_key = sensor_key
-        self._config = config
-        self._attr_translation_key = config["translation_key"]
-        self._attr_icon = config["icon"]
-        self._attr_device_class = config["device_class"]
-        self._attr_state_class = config["state_class"]
-        self._attr_native_unit_of_measurement = config["unit"]
-        self._attr_entity_registry_enabled_default = config["enabled_by_default"]
-        self._attr_unique_id = f"{coordinator.device_sn}_{sensor_key}"
-        self._attr_has_entity_name = True
-
-    @property
-    def device_info(self) -> DeviceInfo | None:
-        """Return device information."""
-        device_identifier = self.coordinator.device_sn or self.coordinator.host
-        if not device_identifier:
-            return None
-
-        return DeviceInfo(
-            identifiers={(DOMAIN, device_identifier)},
-            manufacturer=MANUFACTURER,
-            model=get_device_model(self.coordinator.device_type),
-            sw_version=None,
-            hw_version=None,
-            configuration_url=f"http://{self.coordinator.host}",
-        )
-
-    @property
-    def available(self) -> bool:
-        """Return True if entity is available."""
-        return self.coordinator.last_update_success and self.coordinator.data is not None
-
-    def _get_ct_data_value(self, key: str) -> Any:
-        """Get value from CT data."""
-        if not self.coordinator.data:
-            return None
-        return self.coordinator.data.get(key)
-
-
-class EwayCTVoltageSensor(EwayCTSensorEntity):
-    """CT voltage sensor."""
-
-    @property
-    def suggested_display_precision(self) -> int:
-        """Return the suggested display precision."""
-        return 1
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the voltage value."""
-        voltage = self._get_ct_data_value("ct_voltage")
-        if voltage is not None:
-            try:
-                return float(voltage)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Failed to convert voltage %s to float", voltage)
-        return None
-
-
-class EwayCTCurrentSensor(EwayCTSensorEntity):
-    """CT current sensor."""
-
-    @property
-    def suggested_display_precision(self) -> int:
-        """Return the suggested display precision."""
-        return 3
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the current value."""
-        current = self._get_ct_data_value("ct_current")
-        if current is not None:
-            try:
-                return float(current)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Failed to convert current %s to float", current)
-        return None
-
-
-class EwayCTActivePowerSensor(EwayCTSensorEntity):
-    """CT active power sensor."""
-
-    @property
-    def suggested_display_precision(self) -> int:
-        """Return the suggested display precision."""
-        return 1
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the active power value."""
-        act_power = self._get_ct_data_value("ct_act_power")
-        if act_power is not None:
-            try:
-                return float(act_power)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Failed to convert act_power %s to float", act_power)
-        return None
-
-
-class EwayCTApparentPowerSensor(EwayCTSensorEntity):
-    """CT apparent power sensor."""
-
-    @property
-    def suggested_display_precision(self) -> int:
-        """Return the suggested display precision."""
-        return 1
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the apparent power value."""
-        aprt_power = self._get_ct_data_value("ct_aprt_power")
-        if aprt_power is not None:
-            try:
-                return float(aprt_power)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Failed to convert aprt_power %s to float", aprt_power)
-        return None
-
-
-class EwayCTPowerFactorSensor(EwayCTSensorEntity):
-    """CT power factor sensor."""
-
-    @property
-    def suggested_display_precision(self) -> int:
-        """Return the suggested display precision."""
-        return 3
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the power factor value."""
-        pf = self._get_ct_data_value("ct_pf")
-        if pf is not None:
-            try:
-                return float(pf)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Failed to convert pf %s to float", pf)
-        return None
-
-
-class EwayCTFrequencySensor(EwayCTSensorEntity):
-    """CT frequency sensor."""
-
-    @property
-    def suggested_display_precision(self) -> int:
-        """Return the suggested display precision."""
-        return 1
-
-    @property
-    def native_value(self) -> float | None:
-        """Return the frequency value."""
-        freq = self._get_ct_data_value("ct_freq")
-        if freq is not None:
-            try:
-                return float(freq)
-            except (ValueError, TypeError):
-                _LOGGER.warning("Failed to convert freq %s to float", freq)
-        return None
-
-
-class EwayCTErrorsSensor(EwayCTSensorEntity):
-    """CT errors sensor."""
-
-    @property
-    def native_value(self) -> str | None:
-        """Return the errors value."""
-        errors = self._get_ct_data_value("ct_errors")
-        if errors is not None:
-            if isinstance(errors, list):
-                return ", ".join(errors) if errors else "no_errors"
-            return str(errors)
-        return None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        """Return extra state attributes."""
-        errors = self._get_ct_data_value("ct_errors")
-        if errors is not None and isinstance(errors, list):
-            return {
-                "error_count": len(errors),
-                "error_list": errors,
-            }
-        return None
-
 
 class EwayRealtimeDataSensor(EwayChargerSensorEntity):
     """Real-time charging data sensor."""
@@ -1524,30 +1329,59 @@ class EwayDeviceStatusResponsesSensor(EwayChargerSensorEntity):
 
 
 # Storage sensor base class and specific sensor classes
-class EwayStorageSensorEntity(EwayChargerSensorEntity):
+class EwayStorageSensorEntity(CoordinatorEntity, SensorEntity):
     """Base class for Eway storage sensors."""
 
-    def __init__(
-        self,
-        coordinator: EwayChargerCoordinator,
-        sensor_key: str,
-        config: dict[str, Any],
-    ) -> None:
-        """Initialize the storage sensor."""
-        super().__init__(coordinator, sensor_key, config)
+    def __init__(self, coordinator: EwayStorageCoordinator, sensor_key: str) -> None:
+        """Initialize the sensor entity."""
+        super().__init__(coordinator)
+        self._sensor_key = sensor_key
+        self._sensor_config = STORAGE_SENSOR_CONFIGS[sensor_key]
+
+        # Use device_sn for storage devices
+        device_identifier = coordinator.device_sn
+        self._attr_unique_id = f"{device_identifier}_{sensor_key}"
+        # self._attr_name = self._sensor_config['name']
+        self._attr_translation_key = self._sensor_config["translation_key"]
+        self._attr_has_entity_name = True
+        # Set sensor properties
+        self._attr_device_class = self._sensor_config.get("device_class")
+        self._attr_state_class = self._sensor_config.get("state_class")
+        self._attr_native_unit_of_measurement = self._sensor_config.get("unit")
+        self._attr_icon = self._sensor_config.get("icon")
+        self._attr_entity_category = self._sensor_config.get("entity_category")
+        self._attr_entity_registry_enabled_default = self._sensor_config.get(
+            "enabled_by_default", True
+        )
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device info for the storage device."""
+        if not self.coordinator.device_sn:
+            return None
+
+        return DeviceInfo(
+            identifiers={(DOMAIN, self.coordinator.device_sn)},
+            name=get_device_name(self.coordinator.device_sn, "energy_storage"),
+            manufacturer=MANUFACTURER,
+            model=get_device_model("energy_storage"),
+            sw_version=getattr(self.coordinator, 'firmware_version', None),
+        )
 
     @property
     def available(self) -> bool:
         """Return True if entity is available."""
         is_available = (
-            self.coordinator.last_update_success
+            self.coordinator.connected
+            and self.coordinator.last_update_success
             and self.coordinator.device_type == "energy_storage"
             and self.coordinator.data is not None
             and "storage_mini" in self.coordinator.data
         )
-        _LOGGER.debug(
-            "Storage sensor %s availability check: last_update_success=%s, device_type=%s, storage_mini_exists=%s",
+        _LOGGER.warning(
+            "Storage sensor %s availability check: connected=%s, last_update_success=%s, device_type=%s, storage_mini_exists=%s",
             self._sensor_key,
+            self.coordinator.connected,  # 添加连接状态日志
             self.coordinator.last_update_success,
             self.coordinator.device_type,
             "storage_mini" in (self.coordinator.data or {}),
@@ -1578,7 +1412,7 @@ class EwayStorageTimestampSensor(EwayStorageSensorEntity):
         if timestamp:
             try:
                 # Convert timestamp to datetime
-                dt = datetime.fromtimestamp(timestamp / 1000, tz=datetime.UTC)
+                dt = datetime.fromtimestamp(timestamp / 1000, tz=timezone.utc)
                 _LOGGER.debug(
                     "Storage timestamp sensor value: %s (from %s)", dt, timestamp
                 )
@@ -1911,6 +1745,202 @@ class EwayStorageBatteryTotalDischargeSensor(EwayStorageSensorEntity):
                 return None
             else:
                 return total_discharge_value
+        return None
+
+
+# CT Sensor Entity Classes
+class EwayCTSensorEntity(CoordinatorEntity, SensorEntity):
+    """Base class for CT sensor entities."""
+
+    def __init__(
+        self,
+        coordinator: EwayCTCoordinator,
+        sensor_key: str,
+        config: dict[str, Any],
+    ) -> None:
+        """Initialize the CT sensor entity."""
+        super().__init__(coordinator)
+        self._sensor_key = sensor_key
+        self._config = config
+        self._attr_translation_key = config["translation_key"]
+        self._attr_icon = config["icon"]
+        self._attr_device_class = config["device_class"]
+        self._attr_state_class = config["state_class"]
+        self._attr_native_unit_of_measurement = config["unit"]
+        self._attr_entity_registry_enabled_default = config["enabled_by_default"]
+        self._attr_unique_id = f"{coordinator.device_sn}_{sensor_key}"
+        self._attr_has_entity_name = True
+
+    @property
+    def device_info(self) -> DeviceInfo | None:
+        """Return device information."""
+        device_identifier = self.coordinator.device_sn or self.coordinator.host
+        if not device_identifier:
+            return None
+
+        return DeviceInfo(
+            identifiers={(DOMAIN, device_identifier)},
+            manufacturer=MANUFACTURER,
+            model=get_device_model(self.coordinator.device_type),
+            sw_version=None,
+            hw_version=None,
+            configuration_url=f"http://{self.coordinator.host}",
+        )
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self.coordinator.last_update_success and self.coordinator.data is not None
+
+    def _get_ct_data_value(self, key: str) -> Any:
+        """Get value from CT data."""
+        if not self.coordinator.data:
+            return None
+        return self.coordinator.data.get(key)
+
+
+class EwayCTVoltageSensor(EwayCTSensorEntity):
+    """CT voltage sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the voltage value."""
+        voltage = self._get_ct_data_value("ct_voltage")
+        if voltage is not None:
+            try:
+                return float(voltage)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert voltage %s to float", voltage)
+        return None
+
+
+class EwayCTCurrentSensor(EwayCTSensorEntity):
+    """CT current sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 3
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the current value."""
+        current = self._get_ct_data_value("ct_current")
+        if current is not None:
+            try:
+                return float(current)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert current %s to float", current)
+        return None
+
+
+class EwayCTActivePowerSensor(EwayCTSensorEntity):
+    """CT active power sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the active power value."""
+        act_power = self._get_ct_data_value("ct_act_power")
+        if act_power is not None:
+            try:
+                return float(act_power)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert act_power %s to float", act_power)
+        return None
+
+
+class EwayCTApparentPowerSensor(EwayCTSensorEntity):
+    """CT apparent power sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the apparent power value."""
+        aprt_power = self._get_ct_data_value("ct_aprt_power")
+        if aprt_power is not None:
+            try:
+                return float(aprt_power)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert aprt_power %s to float", aprt_power)
+        return None
+
+
+class EwayCTPowerFactorSensor(EwayCTSensorEntity):
+    """CT power factor sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 3
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the power factor value."""
+        pf = self._get_ct_data_value("ct_pf")
+        if pf is not None:
+            try:
+                return float(pf)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert pf %s to float", pf)
+        return None
+
+
+class EwayCTFrequencySensor(EwayCTSensorEntity):
+    """CT frequency sensor."""
+
+    @property
+    def suggested_display_precision(self) -> int:
+        """Return the suggested display precision."""
+        return 1
+
+    @property
+    def native_value(self) -> float | None:
+        """Return the frequency value."""
+        freq = self._get_ct_data_value("ct_freq")
+        if freq is not None:
+            try:
+                return float(freq)
+            except (ValueError, TypeError):
+                _LOGGER.warning("Failed to convert freq %s to float", freq)
+        return None
+
+
+class EwayCTErrorsSensor(EwayCTSensorEntity):
+    """CT errors sensor."""
+
+    @property
+    def native_value(self) -> str | None:
+        """Return the errors value."""
+        errors = self._get_ct_data_value("ct_errors")
+        if errors is not None:
+            if isinstance(errors, list):
+                return ", ".join(errors) if errors else "no_errors"
+            return str(errors)
+        return None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any] | None:
+        """Return extra state attributes."""
+        errors = self._get_ct_data_value("ct_errors")
+        if errors is not None and isinstance(errors, list):
+            return {
+                "error_count": len(errors),
+                "error_list": errors,
+            }
         return None
 
 

@@ -17,7 +17,6 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
 from .coordinator import EwayChargerCoordinator
-# smart_plug_coordinator import removed - no longer needed
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -105,7 +104,6 @@ async def async_setup_entry(
             device_type,
         )
         # Smart plugs now use switch entities instead of binary sensors
-        pass
     else:
         _LOGGER.debug(
             "Skipping binary sensors for unsupported device type: %s",
@@ -144,9 +142,9 @@ class EwayChargerBinarySensorEntity(CoordinatorEntity, BinarySensorEntity):
             self.coordinator.device_type == "energy_storage"
             and not self.coordinator.device_id
         ):
-            device_identifier = self.coordinator.device_sn or ""
+            device_identifier = self.coordinator.device_id
             device_name = get_device_name(
-                self.coordinator.device_type, self.coordinator.device_sn or ""
+                self.coordinator.device_type, self.coordinator.device_id
             )
         else:
             device_identifier = self.coordinator.device_id

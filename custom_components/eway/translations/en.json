@@ -324,37 +324,37 @@
         "name": "Data Update Time"
       },
       "storage_protocol_version": {
-        "name": "Energy Storage Protocol Version"
+        "name": "Protocol Version"
       },
       "storage_output_power": {
-        "name": "Energy Storage Output Power"
+        "name": "Output Power"
       },
       "storage_pv_power": {
-        "name": "Energy Storage PV Power"
+        "name": "PV Power"
       },
       "storage_pv_daily_generation": {
-        "name": "Energy Storage PV Daily Generation"
+        "name": "PV Daily Generation"
       },
       "storage_pv_total_generation": {
-        "name": "Energy Storage PV Total Generation"
+        "name": "PV Total Generation"
       },
       "storage_battery_power": {
-        "name": "Energy Storage Battery Power"
+        "name": "Battery Power"
       },
       "storage_battery_soc": {
-        "name": "Energy Storage Battery SOC"
+        "name": "Battery SOC"
       },
       "storage_battery_daily_charge": {
-        "name": "Energy Storage Battery Daily Charge"
+        "name": "Battery Daily Charge"
       },
       "storage_battery_total_charge": {
-        "name": "Energy Storage Battery Total Charge"
+        "name": "Battery Total Charge"
       },
       "storage_battery_daily_discharge": {
-        "name": "Energy Storage Battery Daily Discharge"
+        "name": "Battery Daily Discharge"
       },
       "storage_battery_total_discharge": {
-        "name": "Energy Storage Battery Total Discharge"
+        "name": "Battery Total Discharge"
       },
       "ct_voltage": {
         "name": "Voltage"

@@ -14,9 +14,11 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
-from .coordinator import EwayChargerCoordinator
-from .ct_coordinator import EwayCTCoordinator
-from .smart_plug_coordinator import EwaySmartPlugCoordinator
+from .coordinator import (
+    EwayChargerCoordinator,
+    EwayCTCoordinator,
+    EwaySmartPlugCoordinator,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,17 +35,23 @@ async def async_setup_entry(
     # Set up charger switch for charger devices
     if coordinator.device_type == "charger":
         entities.append(EwayChargerSwitch(coordinator))
-        _LOGGER.debug("Added charger switch for device type: %s", coordinator.device_type)
+        _LOGGER.debug(
+            "Added charger switch for device type: %s", coordinator.device_type
+        )
 
     # Set up CT anti-backflow switch for CT devices
     elif coordinator.device_type == "ct":
         entities.append(EwayCTAntiBackflowSwitch(coordinator))
-        _LOGGER.debug("Added CT anti-backflow switch for device type: %s", coordinator.device_type)
+        _LOGGER.debug(
+            "Added CT anti-backflow switch for device type: %s", coordinator.device_type
+        )
 
     # Set up smart plug switch for smart plug devices
     elif coordinator.device_type == "smart_plug":
         entities.append(EwaySmartPlugSwitch(coordinator))
-        _LOGGER.debug("Added smart plug switch for device type: %s", coordinator.device_type)
+        _LOGGER.debug(
+            "Added smart plug switch for device type: %s", coordinator.device_type
+        )
 
     else:
         _LOGGER.debug(
@@ -166,7 +174,9 @@ class EwayCTAntiBackflowSwitch(CoordinatorEntity, SwitchEntity):
     def __init__(self, coordinator: EwayCTCoordinator) -> None:
         """Initialize the switch."""
         super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.device_sn or coordinator.host}_anti_backflow_switch"
+        self._attr_unique_id = (
+            f"{coordinator.device_sn or coordinator.host}_anti_backflow_switch"
+        )
         self._attr_translation_key = "anti_backflow"
         self._attr_icon = "mdi:arrow-left-bold"
         self._last_operation_time = 0
@@ -214,27 +224,33 @@ class EwayCTAntiBackflowSwitch(CoordinatorEntity, SwitchEntity):
         if current_time - self._last_operation_time < self._operation_cooldown:
             _LOGGER.warning(
                 "Anti-backflow operation ignored due to cooldown (%.1fs remaining)",
-                self._operation_cooldown - (current_time - self._last_operation_time)
+                self._operation_cooldown - (current_time - self._last_operation_time),
             )
             return
 
         self._last_operation_time = current_time
+
+        def _raise_anti_backflow_error(exc: Exception | None = None) -> None:
+            """Raise a ValueError for anti-backflow errors consistently."""
+            if exc is None:
+                raise ValueError("Failed to enable anti-backflow")
+            raise ValueError from exc
 
         try:
             success = await self.coordinator.async_set_anti_backflow(True)
             if success:
                 _LOGGER.info(
                     "Enabled anti-backflow for CT device %s",
-                    self.coordinator.device_sn or self.coordinator.host
+                    self.coordinator.device_sn or self.coordinator.host,
                 )
                 # State is already updated in async_set_anti_backflow, no need to refresh
                 self.async_write_ha_state()
             else:
                 _LOGGER.error(
                     "Failed to enable anti-backflow for CT device %s",
-                    self.coordinator.device_sn or self.coordinator.host
+                    self.coordinator.device_sn or self.coordinator.host,
                 )
-                raise ValueError("Failed to enable anti-backflow")
+                _raise_anti_backflow_error()
         except Exception as exc:
             _LOGGER.error("Failed to enable anti-backflow: %s", exc)
             raise
@@ -245,27 +261,33 @@ class EwayCTAntiBackflowSwitch(CoordinatorEntity, SwitchEntity):
         if current_time - self._last_operation_time < self._operation_cooldown:
             _LOGGER.warning(
                 "Anti-backflow operation ignored due to cooldown (%.1fs remaining)",
-                self._operation_cooldown - (current_time - self._last_operation_time)
+                self._operation_cooldown - (current_time - self._last_operation_time),
             )
             return
 
         self._last_operation_time = current_time
+
+        def _raise_anti_backflow_disable_error(exc: Exception | None = None) -> None:
+            """Raise a ValueError for disabling anti-backflow errors consistently."""
+            if exc is None:
+                raise ValueError("Failed to disable anti-backflow")
+            raise ValueError from exc
 
         try:
             success = await self.coordinator.async_set_anti_backflow(False)
             if success:
                 _LOGGER.info(
                     "Disabled anti-backflow for CT device %s",
-                    self.coordinator.device_sn or self.coordinator.host
+                    self.coordinator.device_sn or self.coordinator.host,
                 )
                 # State is already updated in async_set_anti_backflow, no need to refresh
                 self.async_write_ha_state()
             else:
                 _LOGGER.error(
                     "Failed to disable anti-backflow for CT device %s",
-                    self.coordinator.device_sn or self.coordinator.host
+                    self.coordinator.device_sn or self.coordinator.host,
                 )
-                raise ValueError("Failed to disable anti-backflow")
+                _raise_anti_backflow_disable_error()
         except Exception as exc:
             _LOGGER.error("Failed to disable anti-backflow: %s", exc)
             raise
@@ -308,6 +330,13 @@ class EwaySmartPlugSwitch(CoordinatorEntity, SwitchEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn the switch on."""
+
+        def _raise_smart_plug_on_error(exc: Exception | None = None) -> None:
+            """Raise a ValueError for failing to turn on the smart plug."""
+            if exc is None:
+                raise ValueError("Failed to turn on smart plug")
+            raise ValueError from exc
+
         try:
             success = await self.coordinator.async_set_switch_state(True)
             if success:
@@ -315,14 +344,23 @@ class EwaySmartPlugSwitch(CoordinatorEntity, SwitchEntity):
                 # Request immediate update to reflect the change
                 await self.coordinator.async_request_refresh()
             else:
-                _LOGGER.error("Failed to turn on smart plug %s", self.coordinator.device_id)
-                raise ValueError("Failed to turn on smart plug")
+                _LOGGER.error(
+                    "Failed to turn on smart plug %s", self.coordinator.device_id
+                )
+                _raise_smart_plug_on_error()
         except Exception as exc:
             _LOGGER.error("Failed to turn on smart plug: %s", exc)
             raise
 
     async def async_turn_off(self, **kwargs: Any) -> None:
         """Turn the switch off."""
+
+        def _raise_smart_plug_off_error(exc: Exception | None = None) -> None:
+            """Raise a ValueError for failing to turn off the smart plug."""
+            if exc is None:
+                raise ValueError("Failed to turn off smart plug")
+            raise ValueError from exc
+
         try:
             success = await self.coordinator.async_set_switch_state(False)
             if success:
@@ -330,8 +368,10 @@ class EwaySmartPlugSwitch(CoordinatorEntity, SwitchEntity):
                 # Request immediate update to reflect the change
                 await self.coordinator.async_request_refresh()
             else:
-                _LOGGER.error("Failed to turn off smart plug %s", self.coordinator.device_id)
-                raise ValueError("Failed to turn off smart plug")
+                _LOGGER.error(
+                    "Failed to turn off smart plug %s", self.coordinator.device_id
+                )
+                _raise_smart_plug_off_error()
         except Exception as exc:
             _LOGGER.error("Failed to turn off smart plug: %s", exc)
             raise

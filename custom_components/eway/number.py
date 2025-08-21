@@ -13,7 +13,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MANUFACTURER, get_device_model, get_device_name
-from .coordinator import EwayChargerCoordinator
+from .coordinator import EwayChargerCoordinator, EwayStorageCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ async def async_setup_entry(
 class EwayStoragePowerNumber(CoordinatorEntity, NumberEntity):
     """Number entity for Eway Energy Storage power control."""
 
-    def __init__(self, coordinator: EwayChargerCoordinator) -> None:
+    def __init__(self, coordinator: EwayStorageCoordinator) -> None:
         """Initialize the number entity."""
         super().__init__(coordinator)
         self._attr_unique_id = f"{coordinator.device_sn}_storage_power_control"
@@ -174,22 +174,13 @@ class EwayStoragePowerNumber(CoordinatorEntity, NumberEntity):
         """Set the power value."""
         try:
             power_value = int(value)
-            await self.coordinator.async_set_storage_power(power_value)
             _LOGGER.info(
-                "Set storage power to %d W for device %s",
+                "Setting storage power to %s W for device %s",
                 power_value,
                 self.coordinator.device_sn,
             )
-
-            # Update the local value immediately for better UI responsiveness
-            if not self.coordinator.data:
-                self.coordinator.data = {}
-            if "storage_info" not in self.coordinator.data:
-                self.coordinator.data["storage_info"] = {}
-
-            self.coordinator.data["storage_info"]["constant_power"] = power_value
-            self.coordinator.async_set_updated_data(self.coordinator.data)
-
+            await self.coordinator.async_set_storage_power(power_value)
+            _LOGGER.info("Storage power set successfully")
         except (ConnectionError, ValueError, OSError) as exc:
             _LOGGER.error("Failed to set storage power: %s", exc)
             raise

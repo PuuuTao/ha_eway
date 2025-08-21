@@ -18,9 +18,12 @@ from homeassistant.helpers.service_info.zeroconf import ZeroconfServiceInfo
 
 from .binary_sensor import BINARY_SENSOR_CONFIGS
 from .const import CONF_DEVICE_ID, CONF_DEVICE_SN, DOMAIN
-from .ct_coordinator import EwayCTCoordinator
-from .sensor import SENSOR_CONFIGS, STORAGE_SENSOR_CONFIGS, SMART_PLUG_SENSOR_CONFIGS
-from .smart_plug_coordinator import EwaySmartPlugCoordinator
+from .coordinator import (
+    EwayChargerCoordinator,
+    EwayCTCoordinator,
+    EwaySmartPlugCoordinator,
+)
+from .sensor import SENSOR_CONFIGS, SMART_PLUG_SENSOR_CONFIGS, STORAGE_SENSOR_CONFIGS
 from .websocket_client import EwayWebSocketClient
 
 _LOGGER = logging.getLogger(__name__)
@@ -54,7 +57,9 @@ STEP_CT_DATA_SCHEMA = vol.Schema(
 STEP_SMART_PLUG_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_HOST): str,
-        vol.Optional(CONF_DEVICE_SN, default=""): str,  # Smart plug device SN is optional
+        vol.Optional(
+            CONF_DEVICE_SN, default=""
+        ): str,  # Smart plug device SN is optional
     }
 )
 
@@ -124,6 +129,13 @@ async def validate_ct_input(
 
     Data has the keys from STEP_CT_DATA_SCHEMA with values provided by the user.
     """
+
+    def _raise_cannot_connect(exc: Exception | None = None) -> None:
+        """Raise CannotConnect consistently."""
+        if exc is None:
+            raise CannotConnect("Failed to connect to CT device")
+        raise CannotConnect from exc
+
     coordinator = EwayCTCoordinator(
         hass=hass,
         host=data[CONF_HOST],
@@ -133,7 +145,7 @@ async def validate_ct_input(
     try:
         # Test connection
         if not await coordinator.test_connection():
-            raise CannotConnect("Failed to connect to CT device")
+            _raise_cannot_connect()
     except Exception as exc:
         _LOGGER.error("Failed to connect to Eway CT Device: %s", exc)
         raise CannotConnect from exc
@@ -151,6 +163,13 @@ async def validate_smart_plug_input(
 
     Data has the keys from STEP_SMART_PLUG_DATA_SCHEMA with values provided by the user.
     """
+
+    def _raise_cannot_connect(exc: Exception | None = None) -> None:
+        """Raise a CannotConnect exception consistently."""
+        if exc is None:
+            raise CannotConnect("Failed to connect to Smart Plug device")
+        raise CannotConnect from exc
+
     coordinator = EwaySmartPlugCoordinator(
         hass=hass,
         host=data[CONF_HOST],
@@ -160,7 +179,7 @@ async def validate_smart_plug_input(
     try:
         # Test connection
         if not await coordinator.test_connection():
-            raise CannotConnect("Failed to connect to Smart Plug device")
+            _raise_cannot_connect()
     except Exception as exc:
         _LOGGER.error("Failed to connect to Eway Smart Plug Device: %s", exc)
         raise CannotConnect from exc
@@ -213,7 +232,9 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             return self.async_abort(reason="incomplete_discovery_info")
 
         # Check if it's an Eway device (charger, energy storage, CT, or smart plug)
-        if not name.startswith(("EwayCS-TFT", "EwayEnergyStorage", "EwayCT", "EwayPlug")):
+        if not name.startswith(
+            ("EwayCS-TFT", "EwayEnergyStorage", "EwayCT", "EwayPlug")
+        ):
             _LOGGER.warning("Skipping non-Eway device: %s", name)
             return self.async_abort(reason="not_eway_device")
 
@@ -334,7 +355,11 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 port = 8888  # Charger devices use port 8888
             # Prepare config data based on device type
-            if self._discovery_info["device_type"] in ["energy_storage", "ct", "smart_plug"]:
+            if self._discovery_info["device_type"] in [
+                "energy_storage",
+                "ct",
+                "smart_plug",
+            ]:
                 # Energy storage and CT devices don't use device ID
                 config_data = {
                     CONF_HOST: self._discovery_info["host"],
@@ -376,8 +401,10 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 device_type_name = (
                     "Charger"
                     if self._discovery_info["device_type"] == "charger"
-                    else "Energy Storage" if self._discovery_info["device_type"] == "energy_storage"
-                    else "CT" if self._discovery_info["device_type"] == "ct"
+                    else "Energy Storage"
+                    if self._discovery_info["device_type"] == "energy_storage"
+                    else "CT"
+                    if self._discovery_info["device_type"] == "ct"
                     else "Smart Plug"
                 )
                 return self.async_create_entry(
@@ -394,7 +421,11 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 return self.async_abort(reason="unknown")
 
         # Show confirmation form - different schema based on device type
-        if self._discovery_info["device_type"] in ["energy_storage", "ct", "smart_plug"]:
+        if self._discovery_info["device_type"] in [
+            "energy_storage",
+            "ct",
+            "smart_plug",
+        ]:
             # Energy storage and CT devices don't need device ID
             discovery_schema = vol.Schema(
                 {
@@ -446,7 +477,9 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         # Show device type selection form
         device_type_schema = vol.Schema(
             {
-                vol.Required("device_type"): vol.In(["charger", "energy_storage", "ct", "smart_plug"]),
+                vol.Required("device_type"): vol.In(
+                    ["charger", "energy_storage", "ct", "smart_plug"]
+                ),
             }
         )
 
@@ -487,11 +520,11 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_step_discovery(
-        self, user_input: dict[str, Any] | None = None
+        self, discovery_info: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Handle discovered devices selection."""
-        if user_input is not None:
-            selected_device = user_input.get("discovered_device", "")
+        if discovery_info is not None:
+            selected_device = discovery_info.get("discovered_device", "")
 
             # Find the selected device
             for dev in DISCOVERED_DEVICES:
@@ -605,9 +638,7 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_method_options = ["manual"]
         # Check if there are any discovered CT devices
         ct_devices = [
-            dev
-            for dev in DISCOVERED_DEVICES
-            if dev.get("device_type") == "ct"
+            dev for dev in DISCOVERED_DEVICES if dev.get("device_type") == "ct"
         ]
         if ct_devices:
             config_method_options.append("discovered")
@@ -710,151 +741,6 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             errors=errors,
         )
 
-    async def async_step_manual_ct(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle manual CT configuration."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            try:
-                # Add device_type and device_id to the data
-                user_input["device_type"] = "ct"
-                user_input[CONF_DEVICE_ID] = ""  # CT devices don't have device_id
-                info = await validate_ct_input(self.hass, user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-            else:
-                return self.async_create_entry(title=info["title"], data=user_input)
-
-        return self.async_show_form(
-            step_id="manual_ct",
-            data_schema=STEP_CT_DATA_SCHEMA,
-            errors=errors,
-        )
-
-    async def async_step_smart_plug(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle smart plug configuration step - choose configuration method."""
-        if user_input is not None:
-            config_method = user_input.get("config_method", "")
-
-            if config_method == "manual":
-                return await self.async_step_manual_smart_plug()
-            if config_method == "discovered":
-                return await self.async_step_discovery_smart_plug()
-
-        # Prepare configuration method options
-        config_method_options = ["manual"]
-        # Check if there are any discovered smart plug devices
-        smart_plug_devices = [
-            dev
-            for dev in DISCOVERED_DEVICES
-            if dev.get("device_type") == "smart_plug"
-        ]
-        if smart_plug_devices:
-            config_method_options.append("discovered")
-
-        # Build form schema
-        data_schema = vol.Schema(
-            {
-                vol.Required("config_method"): vol.In(config_method_options),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="smart_plug",
-            data_schema=data_schema,
-            description_placeholders={},
-        )
-
-    async def async_step_manual_smart_plug(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle manual smart plug configuration."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            try:
-                # Add device_type and device_id to the data
-                user_input["device_type"] = "smart_plug"
-                user_input[CONF_DEVICE_ID] = ""  # Smart plug devices don't have device_id
-                info = await validate_smart_plug_input(self.hass, user_input)
-            except CannotConnect:
-                errors["base"] = "cannot_connect"
-            except InvalidAuth:
-                errors["base"] = "invalid_auth"
-            except Exception:  # pylint: disable=broad-except
-                _LOGGER.exception("Unexpected exception")
-                errors["base"] = "unknown"
-            else:
-                return self.async_create_entry(title=info["title"], data=user_input)
-
-        return self.async_show_form(
-            step_id="manual_smart_plug",
-            data_schema=STEP_SMART_PLUG_DATA_SCHEMA,
-            errors=errors,
-        )
-
-    async def async_step_discovery_smart_plug(
-        self, user_input: dict[str, Any] | None = None
-    ) -> config_entries.ConfigFlowResult:
-        """Handle discovered smart plug devices selection."""
-        if user_input is not None:
-            selected_device = user_input.get("discovered_device", "")
-
-            # Find the selected device
-            for dev in DISCOVERED_DEVICES:
-                key = f"{dev['host']}:{dev['port']}"
-                if selected_device == key:
-                    self._discovery_info = dev
-                    return await self.async_step_zeroconf_confirm()
-
-            return self.async_abort(reason="device_not_found")
-
-        # Filter devices based on current context (smart plug only)
-        smart_plug_devices = [
-            dev
-            for dev in DISCOVERED_DEVICES
-            if dev.get("device_type") == "smart_plug"
-        ]
-
-        # Check if there are discovered smart plug devices
-        if not smart_plug_devices:
-            return self.async_abort(reason="no_devices_found")
-
-        # Prepare discovered device options (smart plug only)
-        discovered_device_options = OrderedDict()
-
-        for dev in smart_plug_devices:
-            key = f"{dev['host']}:{dev['port']}"
-
-            # Extract the main part of device name
-            device_name = dev["name"]
-            if "._http._tcp.local." in device_name:
-                device_name = device_name.replace("._http._tcp.local.", "")
-
-            # For smart plug: show the full name
-            label = f"Smart Plug: {device_name}"
-            discovered_device_options[key] = label
-
-        # Build form schema
-        data_schema = vol.Schema(
-            {
-                vol.Required("discovered_device"): vol.In(discovered_device_options),
-            }
-        )
-
-        return self.async_show_form(
-            step_id="discovery_smart_plug",
-            data_schema=data_schema,
-            description_placeholders={},
-        )
-
     async def async_step_discovery_energy_storage(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -911,6 +797,149 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             description_placeholders={},
         )
 
+    async def async_step_manual_ct(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle manual CT configuration."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                # Add device_type and device_id to the data
+                user_input["device_type"] = "ct"
+                user_input[CONF_DEVICE_ID] = ""  # CT devices don't have device_id
+                info = await validate_ct_input(self.hass, user_input)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                return self.async_create_entry(title=info["title"], data=user_input)
+
+        return self.async_show_form(
+            step_id="manual_ct",
+            data_schema=STEP_CT_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_smart_plug(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle smart plug configuration step - choose configuration method."""
+        if user_input is not None:
+            config_method = user_input.get("config_method", "")
+
+            if config_method == "manual":
+                return await self.async_step_manual_smart_plug()
+            if config_method == "discovered":
+                return await self.async_step_discovery_smart_plug()
+
+        # Prepare configuration method options
+        config_method_options = ["manual"]
+        # Check if there are any discovered smart plug devices
+        smart_plug_devices = [
+            dev for dev in DISCOVERED_DEVICES if dev.get("device_type") == "smart_plug"
+        ]
+        if smart_plug_devices:
+            config_method_options.append("discovered")
+
+        # Build form schema
+        data_schema = vol.Schema(
+            {
+                vol.Required("config_method"): vol.In(config_method_options),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="smart_plug",
+            data_schema=data_schema,
+            description_placeholders={},
+        )
+
+    async def async_step_manual_smart_plug(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle manual smart plug configuration."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                # Add device_type and device_id to the data
+                user_input["device_type"] = "smart_plug"
+                user_input[CONF_DEVICE_ID] = (
+                    ""  # Smart plug devices don't have device_id
+                )
+                info = await validate_smart_plug_input(self.hass, user_input)
+            except CannotConnect:
+                errors["base"] = "cannot_connect"
+            except InvalidAuth:
+                errors["base"] = "invalid_auth"
+            except Exception:  # pylint: disable=broad-except
+                _LOGGER.exception("Unexpected exception")
+                errors["base"] = "unknown"
+            else:
+                return self.async_create_entry(title=info["title"], data=user_input)
+
+        return self.async_show_form(
+            step_id="manual_smart_plug",
+            data_schema=STEP_SMART_PLUG_DATA_SCHEMA,
+            errors=errors,
+        )
+
+    async def async_step_discovery_smart_plug(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        """Handle discovered smart plug devices selection."""
+        if user_input is not None:
+            selected_device = user_input.get("discovered_device", "")
+
+            # Find the selected device
+            for dev in DISCOVERED_DEVICES:
+                key = f"{dev['host']}:{dev['port']}"
+                if selected_device == key:
+                    self._discovery_info = dev
+                    return await self.async_step_zeroconf_confirm()
+
+            return self.async_abort(reason="device_not_found")
+
+        # Filter devices based on current context (smart plug only)
+        smart_plug_devices = [
+            dev for dev in DISCOVERED_DEVICES if dev.get("device_type") == "smart_plug"
+        ]
+
+        # Check if there are discovered smart plug devices
+        if not smart_plug_devices:
+            return self.async_abort(reason="no_devices_found")
+
+        # Prepare discovered device options (smart plug only)
+        discovered_device_options = OrderedDict()
+
+        for dev in smart_plug_devices:
+            key = f"{dev['host']}:{dev['port']}"
+
+            # Extract the main part of device name
+            device_name = dev["name"]
+            if "._http._tcp.local." in device_name:
+                device_name = device_name.replace("._http._tcp.local.", "")
+
+            # For smart plug: show the full name
+            label = f"Smart Plug: {device_name}"
+            discovered_device_options[key] = label
+
+        # Build form schema
+        data_schema = vol.Schema(
+            {
+                vol.Required("discovered_device"): vol.In(discovered_device_options),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="discovery_smart_plug",
+            data_schema=data_schema,
+            description_placeholders={},
+        )
+
     async def async_step_discovery_ct(
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
@@ -929,9 +958,7 @@ class EwayConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Filter devices based on current context (CT only)
         ct_devices = [
-            dev
-            for dev in DISCOVERED_DEVICES
-            if dev.get("device_type") == "ct"
+            dev for dev in DISCOVERED_DEVICES if dev.get("device_type") == "ct"
         ]
 
         # Check if there are discovered CT devices
@@ -988,10 +1015,10 @@ class EwayOptionsFlow(config_entries.OptionsFlow):
         if device_type == "energy_storage":
             # Handle energy storage device options
             return await self._handle_energy_storage_options(user_input)
-        elif device_type == "ct":
+        if device_type == "ct":
             # Handle CT device options (similar to energy storage for now)
             return await self._handle_energy_storage_options(user_input)
-        elif device_type == "smart_plug":
+        if device_type == "smart_plug":
             # Handle smart plug device options
             return await self._handle_smart_plug_options(user_input)
 
@@ -1093,7 +1120,9 @@ class EwayOptionsFlow(config_entries.OptionsFlow):
         """Handle smart plug device options."""
 
         # Get current enabled smart plug sensors or default to all sensors
-        current_enabled = self.config_entry.options.get("enabled_smart_plug_sensors", [])
+        current_enabled = self.config_entry.options.get(
+            "enabled_smart_plug_sensors", []
+        )
         if not current_enabled:
             current_enabled = list(SMART_PLUG_SENSOR_CONFIGS.keys())
 
