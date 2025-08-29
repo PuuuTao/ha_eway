@@ -873,6 +873,21 @@ class EwayChargerCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Sending stop charging command: %s", command)
         await self.async_send_command(command)
 
+    def _map_pile_status(self, status: int | None) -> int | None:
+        """Map pile status value."""
+        if status is None:
+            return None
+        # Return the raw status value (0: idle, 1: charging, 2: fault)
+        # The mapping to text is handled in the sensor classes
+        return int(status) if isinstance(status, (int, float, str)) else None
+
+    def _map_signal_strength(self, rssi: int | None) -> int | None:
+        """Map signal strength value."""
+        if rssi is None or rssi == -1:
+            return -1  # -1 means signal unavailable
+        # Return the raw RSSI value
+        return int(rssi) if isinstance(rssi, (int, float, str)) else -1
+
     def _update_device_registry(self, device_info: dict[str, Any]) -> None:
         """Update device registry with new firmware version."""
         try:
